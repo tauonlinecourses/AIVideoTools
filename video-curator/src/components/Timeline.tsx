@@ -1,0 +1,220 @@
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { useStore, type Section } from '../lib/store'
+
+export interface TimelineProps {
+  onSeek: (time: number) => void
+  onSectionClick: (sectionId: number) => void
+  className?: string
+}
+
+type SectionBlock = {
+  id: number
+  title: string
+  color: string
+  isEnabled: boolean
+  startTime: number
+  endTime: number
+  duration: number
+  widthPct: number
+}
+
+function clamp01(x: number): number {
+  if (!Number.isFinite(x)) return 0
+  return Math.min(1, Math.max(0, x))
+}
+
+function formatMMSS(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
+  const rounded = Math.max(0, Math.round(totalSeconds))
+  const mm = Math.floor(rounded / 60)
+  const ss = rounded % 60
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+}
+
+function sectionStartEnd(section: Section): { start: number; end: number } {
+  const first = section.items[0]
+  const last = section.items[section.items.length - 1]
+  return {
+    start: first?.startTime ?? 0,
+    end: last?.endTime ?? first?.startTime ?? 0,
+  }
+}
+
+function sectionDurationSeconds(section: Section): number {
+  const { start, end } = sectionStartEnd(section)
+  return Math.max(0, end - start)
+}
+
+export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
+  const sections = useStore(s => s.sections)
+
+  const containerRef = useRef<HTMLDivElement | null>(null)
+  const scrubberRef = useRef<HTMLDivElement | null>(null)
+
+  const [containerWidthPx, setContainerWidthPx] = useState(0)
+
+  const { blocks, totalDuration } = useMemo(() => {
+    const durations = sections.map(sectionDurationSeconds)
+    const total = durations.reduce((acc, d) => acc + d, 0)
+    const blocks: SectionBlock[] = sections.map((s) => {
+      const { start, end } = sectionStartEnd(s)
+      const duration = Math.max(0, end - start)
+      const widthPct = total > 0 ? (duration / total) * 100 : 0
+      return {
+        id: s.id,
+        title: s.title,
+        color: s.color,
+        isEnabled: s.isEnabled,
+        startTime: start,
+        endTime: end,
+        duration,
+        widthPct,
+      }
+    })
+
+    // Avoid accumulating floating error leaving a visible gap at the end.
+    if (blocks.length > 0 && total > 0) {
+      const sum = blocks.reduce((acc, b) => acc + b.widthPct, 0)
+      const diff = 100 - sum
+      blocks[blocks.length - 1] = { ...blocks[blocks.length - 1], widthPct: blocks[blocks.length - 1].widthPct + diff }
+    }
+
+    return { blocks, totalDuration: total }
+  }, [sections])
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+
+    const ro = new ResizeObserver((entries) => {
+      const entry = entries[0]
+      if (!entry) return
+      setContainerWidthPx(entry.contentRect.width)
+    })
+
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  useEffect(() => {
+    let rafId = 0
+
+    const tick = () => {
+      const scrubber = scrubberRef.current
+      if (scrubber) {
+        const { currentTime } = useStore.getState()
+        const pct = totalDuration > 0 ? clamp01(currentTime / totalDuration) * 100 : 0
+        scrubber.style.left = `${pct}%`
+      }
+      rafId = window.requestAnimationFrame(tick)
+    }
+
+    rafId = window.requestAnimationFrame(tick)
+    return () => window.cancelAnimationFrame(rafId)
+  }, [totalDuration])
+
+  const onBackgroundClick = (e: React.MouseEvent) => {
+    const el = containerRef.current
+    if (!el) return
+    if (totalDuration <= 0) return
+
+    const rect = el.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const pct = clamp01(rect.width > 0 ? x / rect.width : 0)
+    onSeek(pct * totalDuration)
+  }
+
+  if (sections.length === 0) {
+    return (
+      <div
+        className={[
+          'flex h-12 w-full items-center justify-center rounded-lg border border-gray-200 bg-gray-50',
+          'text-sm text-gray-500',
+          className ?? '',
+        ].join(' ')}
+      >
+        Sections will appear here after generation
+      </div>
+    )
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      className={[
+        'relative h-12 w-full overflow-hidden rounded-lg border border-gray-200 bg-white',
+        className ?? '',
+      ].join(' ')}
+      onClick={onBackgroundClick}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key !== 'Enter' && e.key !== ' ') return
+        e.preventDefault()
+        // Keyboard interaction uses center seek
+        if (totalDuration > 0) onSeek(totalDuration * 0.5)
+      }}
+      aria-label="Timeline"
+    >
+      <div className="flex h-full w-full gap-[1px] bg-white">
+        {blocks.map((b) => {
+          const blockWidthPx = containerWidthPx > 0 ? (b.widthPct / 100) * containerWidthPx : 0
+          const canShowTitle = blockWidthPx > 80
+          const tooltip = `${b.title} • ${formatMMSS(b.duration)}`
+
+          return (
+            <button
+              key={b.id}
+              type="button"
+              className={[
+                'relative h-full flex-none min-w-0',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                !b.isEnabled ? 'opacity-40' : '',
+              ].join(' ')}
+              style={{ width: `${b.widthPct}%`, backgroundColor: b.color }}
+              title={canShowTitle ? undefined : tooltip}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                onSectionClick(b.id)
+                onSeek(b.startTime)
+              }}
+              aria-label={tooltip}
+            >
+              {!b.isEnabled ? (
+                <div
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    backgroundImage: `repeating-linear-gradient(
+                      45deg,
+                      rgba(0,0,0,0.15) 0px,
+                      rgba(0,0,0,0.15) 4px,
+                      transparent 4px,
+                      transparent 10px
+                    )`,
+                  }}
+                />
+              ) : null}
+
+              {canShowTitle ? (
+                <div className="flex h-full items-center px-2">
+                  <div className="min-w-0 truncate text-[11px] font-medium text-white">
+                    {b.title}
+                  </div>
+                </div>
+              ) : null}
+            </button>
+          )
+        })}
+      </div>
+
+      <div
+        ref={scrubberRef}
+        className="pointer-events-none absolute top-0 h-full w-[2px] bg-gray-700"
+        style={{ left: '0%' }}
+        aria-hidden="true"
+      />
+    </div>
+  )
+}
+

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { SrtItem } from './parseSrt'
+import { segmentTranscript } from './segmentTranscript'
 
 export interface Section {
   id: number
@@ -35,6 +36,7 @@ export interface AppState {
   setGenerateError: (err: string | null) => void
   setCurrentTime: (t: number) => void
   toggleSection: (id: number) => void
+  renameSection: (id: number, title: string) => void
   moveSentenceUp: (sectionId: number, itemIndex: number) => void
   moveSentenceDown: (sectionId: number, itemIndex: number) => void
   generateSections: () => Promise<void>
@@ -89,7 +91,13 @@ export const useStore = create<AppState>((set) => ({
     )
   })),
 
-  moveSentenceUp: (sectionId, itemIndex) => set((state) => {
+  renameSection: (id, title) => set((state) => ({
+    sections: state.sections.map(s =>
+      s.id === id ? { ...s, title } : s
+    )
+  })),
+
+  moveSentenceUp: (sectionId, _itemIndex) => set((state) => {
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx <= 0) return {}
@@ -106,7 +114,7 @@ export const useStore = create<AppState>((set) => ({
     return { sections }
   }),
 
-  moveSentenceDown: (sectionId, itemIndex) => set((state) => {
+  moveSentenceDown: (sectionId, _itemIndex) => set((state) => {
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx >= sections.length - 1) return {}

@@ -20,7 +20,7 @@ function buildTranscriptText(items: SrtItem[]): string {
     .join('\n')
 }
 
-function buildPrompt(transcriptText: string): string {
+function buildPrompt(transcriptText: string, totalItems: number): string {
   return `You are an expert educational content editor. Your job is to analyze a video transcript and group its sentences into logical, meaningful sections based on topic changes.
 
 TRANSCRIPT:
@@ -28,6 +28,7 @@ ${transcriptText}
 
 INSTRUCTIONS:
 - Each line starts with [N] where N is the sentence index
+- There are exactly ${totalItems} sentences, with indices 0..${Math.max(0, totalItems - 1)}
 - Group consecutive sentences into sections based on topic or concept changes
 - Aim for 4 to 8 sections total — not too granular, not too broad
 - Every sentence index must appear in exactly one section — no gaps, no duplicates
@@ -80,6 +81,70 @@ function validateResponse(data: GptResponse, totalItems: number): string | null 
   return null
 }
 
+function repairPartialResponse(data: GptResponse, totalItems: number): { repaired: GptResponse; wasRepaired: boolean } {
+  if (!data?.sections || !Array.isArray(data.sections) || totalItems <= 0) {
+    return { repaired: { sections: [] }, wasRepaired: false }
+  }
+
+  // Build a per-index owner title map. First writer wins, ignore out-of-range indices.
+  const ownerTitle: Array<string | null> = Array.from({ length: totalItems }, () => null)
+  for (const section of data.sections) {
+    if (!section || typeof section.title !== 'string' || !Array.isArray(section.sentenceIndices)) continue
+    for (const idx of section.sentenceIndices) {
+      if (typeof idx !== 'number') continue
+      if (idx < 0 || idx >= totalItems) continue
+      if (ownerTitle[idx] === null) ownerTitle[idx] = section.title
+    }
+  }
+
+  const allCovered = ownerTitle.every(t => t !== null)
+  const hasNoDuplicatesOrGaps =
+    allCovered &&
+    (() => {
+      // Ensure each index assigned exactly once (true by construction if allCovered).
+      return true
+    })()
+
+  if (hasNoDuplicatesOrGaps) return { repaired: data, wasRepaired: false }
+
+  // Reconstruct sections as consecutive runs across 0..N-1.
+  const repairedSections: GptSection[] = []
+  let nextId = 1
+  let unassignedBlock = 0
+
+  const titleFor = (t: string | null) => {
+    if (t) return t
+    unassignedBlock += 1
+    return unassignedBlock === 1 ? 'Unassigned' : `Unassigned (${unassignedBlock})`
+  }
+
+  let i = 0
+  while (i < totalItems) {
+    const runTitle = titleFor(ownerTitle[i])
+    const runIndices: number[] = [i]
+    i += 1
+
+    while (i < totalItems) {
+      const t = ownerTitle[i]
+      // Keep same run if same title OR both unassigned (null).
+      const same =
+        (t === null && runTitle.startsWith('Unassigned')) ||
+        (t !== null && t === runTitle)
+      if (!same) break
+      runIndices.push(i)
+      i += 1
+    }
+
+    repairedSections.push({
+      id: nextId++,
+      title: runTitle,
+      sentenceIndices: runIndices,
+    })
+  }
+
+  return { repaired: { sections: repairedSections }, wasRepaired: true }
+}
+
 function buildEqualChunkFallback(items: SrtItem[]): Section[] {
   const CHUNK_COUNT = 5
   const chunkSize = Math.ceil(items.length / CHUNK_COUNT)
@@ -104,8 +169,6 @@ function buildEqualChunkFallback(items: SrtItem[]): Section[] {
 export async function segmentTranscript(
   items: SrtItem[]
 ): Promise<{ sections: Section[]; usedFallback: boolean }> {
-  const apiKey = import.meta.env.VITE_OPENAI_KEY
-
   // Truncate if transcript is very long
   const transcriptText = buildTranscriptText(
     items.length > MAX_CHARS
@@ -113,43 +176,37 @@ export async function segmentTranscript(
       : items
   )
 
-  const prompt = buildPrompt(transcriptText)
+  const prompt = buildPrompt(transcriptText, items.length)
 
   let rawJson: string | null = null
 
   try {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    const response = await fetch('/api/segment-transcript', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a transcript segmentation engine. You only output valid JSON.',
-          },
-          {
-            role: 'user',
-            content: prompt,
-          },
-        ],
+        prompt,
       }),
     })
 
     if (!response.ok) {
-      throw new Error(`OpenAI API error: ${response.status}`)
+      let details = ''
+      try {
+        details = await response.text()
+      } catch {
+        // ignore
+      }
+      throw new Error(`Segmentation API error: ${response.status}${details ? ` — ${details}` : ''}`)
     }
 
     const data = await response.json()
-    rawJson = data.choices[0].message.content
+    rawJson = data.content
 
     const parsed: GptResponse = JSON.parse(rawJson!)
-    const validationError = validateResponse(parsed, items.length)
+    const { repaired, wasRepaired } = repairPartialResponse(parsed, items.length)
+    const validationError = validateResponse(repaired, items.length)
 
     if (validationError) {
       console.warn('Validation failed:', validationError, '— using fallback')
@@ -157,15 +214,19 @@ export async function segmentTranscript(
     }
 
     const sections = assignColors(
-      parsed.sections.map(s => ({
-        id: s.id,
+      repaired.sections.map((s, idx) => ({
+        // Keep ids stable-ish even if the model gave weird ids.
+        id: Number.isFinite(s.id) ? s.id : idx + 1,
         title: s.title,
         isEnabled: true,
         items: s.sentenceIndices.map(i => items[i]),
       }))
     )
 
-    return { sections, usedFallback: false }
+    if (wasRepaired) {
+      console.warn('Validation repaired: model returned partial indices — filled gaps with Unassigned sections')
+    }
+    return { sections, usedFallback: wasRepaired }
 
   } catch (err) {
     console.warn('Segmentation failed:', err, '— using fallback')
