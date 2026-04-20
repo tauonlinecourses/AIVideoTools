@@ -47,6 +47,8 @@ function sectionDurationSeconds(section: Section): number {
 
 export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
   const sections = useStore(s => s.sections)
+  const videoDuration = useStore(s => s.videoDuration)
+  const timelinePosterUrl = useStore(s => s.timelinePosterUrl)
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const scrubberRef = useRef<HTMLDivElement | null>(null)
@@ -54,6 +56,9 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
   const [containerWidthPx, setContainerWidthPx] = useState(0)
 
   const { blocks, totalDuration } = useMemo(() => {
+    if (sections.length === 0) {
+      return { blocks: [] as SectionBlock[], totalDuration: videoDuration }
+    }
     const durations = sections.map(sectionDurationSeconds)
     const total = durations.reduce((acc, d) => acc + d, 0)
     const blocks: SectionBlock[] = sections.map((s) => {
@@ -80,7 +85,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     }
 
     return { blocks, totalDuration: total }
-  }, [sections])
+  }, [sections, videoDuration])
 
   useEffect(() => {
     const el = containerRef.current
@@ -124,25 +129,12 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     onSeek(pct * totalDuration)
   }
 
-  if (sections.length === 0) {
-    return (
-      <div
-        className={[
-          'flex h-12 w-full items-center justify-center rounded-lg border border-gray-200 bg-gray-50',
-          'text-sm text-gray-500',
-          className ?? '',
-        ].join(' ')}
-      >
-        Sections will appear here after generation
-      </div>
-    )
-  }
-
   return (
     <div
       ref={containerRef}
       className={[
-        'relative h-12 w-full overflow-hidden rounded-lg border border-gray-200 bg-white',
+        'relative h-12 w-full overflow-hidden border border-gray-200 bg-white',
+        'rounded-[3px]',
         className ?? '',
       ].join(' ')}
       onClick={onBackgroundClick}
@@ -156,56 +148,93 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
       }}
       aria-label="Timeline"
     >
-      <div className="flex h-full w-full gap-[1px] bg-white">
-        {blocks.map((b) => {
-          const blockWidthPx = containerWidthPx > 0 ? (b.widthPct / 100) * containerWidthPx : 0
-          const canShowTitle = blockWidthPx > 80
-          const tooltip = `${b.title} • ${formatMMSS(b.duration)}`
+      {sections.length === 0 ? (
+        <div
+          className="absolute inset-0 rounded-[3px]"
+          style={
+            timelinePosterUrl
+              ? {
+                  backgroundImage: [
+                    `url("${timelinePosterUrl}")`,
+                    // vertical separators between thumbnails
+                    'repeating-linear-gradient(90deg, rgba(0,0,0,0.14) 0px, rgba(0,0,0,0.14) 1px, transparent 1px, transparent 72px)',
+                    // subtle top/bottom edge lines like editors
+                    'linear-gradient(to bottom, rgba(0,0,0,0.10), rgba(0,0,0,0) 12px, rgba(0,0,0,0) 36px, rgba(0,0,0,0.10))',
+                  ].join(', '),
+                  backgroundRepeat: 'repeat-x, repeat-x, no-repeat',
+                  backgroundPosition: 'left center, left center, left center',
+                  backgroundSize: '72px 48px, 72px 48px, 100% 100%',
+                  filter: 'brightness(1.02) contrast(1.05)',
+                }
+              : undefined
+          }
+          aria-hidden="true"
+        />
+      ) : null}
 
-          return (
-            <button
-              key={b.id}
-              type="button"
-              className={[
-                'relative h-full flex-none min-w-0',
-                'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                !b.isEnabled ? 'opacity-40' : '',
-              ].join(' ')}
-              style={{ width: `${b.widthPct}%`, backgroundColor: b.color }}
-              title={canShowTitle ? undefined : tooltip}
-              onClick={(e) => {
-                e.preventDefault()
-                e.stopPropagation()
-                onSectionClick(b.id)
-                onSeek(b.startTime)
-              }}
-              aria-label={tooltip}
-            >
-              {!b.isEnabled ? (
-                <div
-                  className="pointer-events-none absolute inset-0"
-                  style={{
-                    backgroundImage: `repeating-linear-gradient(
-                      45deg,
-                      rgba(0,0,0,0.15) 0px,
-                      rgba(0,0,0,0.15) 4px,
-                      transparent 4px,
-                      transparent 10px
-                    )`,
-                  }}
-                />
-              ) : null}
+      <div
+        className={[
+          'relative flex h-full w-full gap-[1px]',
+          sections.length === 0 ? 'bg-transparent' : 'bg-white',
+        ].join(' ')}
+      >
+        {sections.length === 0 ? (
+          <div className="flex h-full w-full items-center justify-end px-3 text-xs text-gray-700">
+            {totalDuration > 0 ? (
+              <div className="font-mono text-gray-600">{formatMMSS(totalDuration)}</div>
+            ) : null}
+          </div>
+        ) : (
+          blocks.map((b) => {
+            const blockWidthPx = containerWidthPx > 0 ? (b.widthPct / 100) * containerWidthPx : 0
+            const canShowTitle = blockWidthPx > 80
+            const tooltip = `${b.title} • ${formatMMSS(b.duration)}`
 
-              {canShowTitle ? (
-                <div className="flex h-full items-center px-2">
-                  <div className="min-w-0 truncate text-[11px] font-medium text-white">
-                    {b.title}
+            return (
+              <button
+                key={b.id}
+                type="button"
+                className={[
+                  'relative h-full flex-none min-w-0',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                  !b.isEnabled ? 'opacity-40' : '',
+                ].join(' ')}
+                style={{ width: `${b.widthPct}%`, backgroundColor: b.color }}
+                title={canShowTitle ? undefined : tooltip}
+                onClick={(e) => {
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onSectionClick(b.id)
+                  onSeek(b.startTime)
+                }}
+                aria-label={tooltip}
+              >
+                {!b.isEnabled ? (
+                  <div
+                    className="pointer-events-none absolute inset-0"
+                    style={{
+                      backgroundImage: `repeating-linear-gradient(
+                        45deg,
+                        rgba(0,0,0,0.15) 0px,
+                        rgba(0,0,0,0.15) 4px,
+                        transparent 4px,
+                        transparent 10px
+                      )`,
+                    }}
+                  />
+                ) : null}
+
+                {canShowTitle ? (
+                  <div className="flex h-full items-center px-2">
+                    <div className="min-w-0 truncate text-[11px] font-medium text-white">
+                      {b.title}
+                    </div>
                   </div>
-                </div>
-              ) : null}
-            </button>
-          )
-        })}
+                ) : null}
+              </button>
+            )
+          })
+        )}
       </div>
 
       <div

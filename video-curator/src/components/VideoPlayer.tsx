@@ -22,9 +22,29 @@ function clampTime(t: number): number {
   return Math.max(0, t)
 }
 
+function captureFirstFrameDataUrl(video: HTMLVideoElement): string | null {
+  const w = video.videoWidth
+  const h = video.videoHeight
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) return null
+  const canvas = document.createElement('canvas')
+  // Small thumbnail is enough for a repeating filmstrip and avoids huge data URLs.
+  const targetH = 48
+  const targetW = 72
+  canvas.width = targetW
+  canvas.height = targetH
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  try {
+    ctx.drawImage(video, 0, 0, w, h, 0, 0, targetW, targetH)
+    return canvas.toDataURL('image/jpeg', 0.8)
+  } catch {
+    return null
+  }
+}
+
 function PlayIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
       <path fill="currentColor" d="M8 5v14l12-7-12-7z" />
     </svg>
   )
@@ -32,7 +52,7 @@ function PlayIcon() {
 
 function PauseIcon() {
   return (
-    <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+    <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
       <path fill="currentColor" d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
     </svg>
   )
@@ -42,6 +62,7 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
   function VideoPlayer({ className }, ref) {
     const videoUrl = useStore(s => s.videoUrl)
     const setCurrentTime = useStore(s => s.setCurrentTime)
+    const setVideoMeta = useStore(s => s.setVideoMeta)
 
     const videoRef = useRef<HTMLVideoElement | null>(null)
     const rafRef = useRef<number | null>(null)
@@ -84,10 +105,72 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
     useEffect(() => {
       const video = videoRef.current
       if (!video) return
+      if (!videoUrl) return
+
+      let cancelled = false
+      let cleanupSeeked: (() => void) | null = null
+
+      const tryCapture = () => {
+        if (cancelled) return false
+        const poster = captureFirstFrameDataUrl(video)
+        if (!poster) return false
+        const d = Number.isFinite(video.duration) ? video.duration : 0
+        setVideoMeta({ duration: d, timelinePosterUrl: poster })
+        return true
+      }
+
+      // If we already have enough data, capture immediately.
+      if (video.readyState >= 2) {
+        tryCapture()
+        return () => {
+          cancelled = true
+          cleanupSeeked?.()
+        }
+      }
+
+      const onLoadedData = () => {
+        if (tryCapture()) return
+
+        // Some videos don't paint a useful first frame at t=0 until a seek occurs,
+        // and t=0 can often be black. Grab a tiny offset to get a representative frame.
+        const dur = Number.isFinite(video.duration) ? video.duration : 0
+        const target = Math.min(Math.max(0, dur - 0.01), Math.max(0.0, Math.min(0.5, dur * 0.05)))
+
+        const onSeeked = () => {
+          cleanupSeeked?.()
+          tryCapture()
+          try {
+            video.currentTime = 0
+          } catch {
+            // ignore
+          }
+        }
+
+        cleanupSeeked = () => video.removeEventListener('seeked', onSeeked)
+        video.addEventListener('seeked', onSeeked)
+        try {
+          video.currentTime = target
+        } catch {
+          cleanupSeeked?.()
+        }
+      }
+
+      video.addEventListener('loadeddata', onLoadedData)
+      return () => {
+        cancelled = true
+        video.removeEventListener('loadeddata', onLoadedData)
+        cleanupSeeked?.()
+      }
+    }, [setVideoMeta, videoUrl])
+
+    useEffect(() => {
+      const video = videoRef.current
+      if (!video) return
 
       const onLoaded = () => {
         const d = Number.isFinite(video.duration) ? video.duration : 0
         setDuration(d > 0 ? d : 0)
+        setVideoMeta({ duration: d, timelinePosterUrl: useStore.getState().timelinePosterUrl })
       }
 
       const onPlay = () => setIsPlaying(true)
@@ -100,6 +183,10 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       video.addEventListener('pause', onPause)
       video.addEventListener('ended', onEnded)
 
+      // Ensure initial UI is correct if metadata already exists
+      onLoaded()
+      setIsPlaying(!video.paused && !video.ended)
+
       return () => {
         video.removeEventListener('loadedmetadata', onLoaded)
         video.removeEventListener('durationchange', onLoaded)
@@ -107,7 +194,7 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         video.removeEventListener('pause', onPause)
         video.removeEventListener('ended', onEnded)
       }
-    }, [])
+    }, [setVideoMeta, videoUrl])
 
     function tick() {
       const video = videoRef.current
@@ -156,6 +243,10 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       if (!videoUrl) return
 
       try {
+        if (video.src !== videoUrl) {
+          video.src = videoUrl
+          video.load()
+        }
         if (video.paused) {
           await video.play()
         } else {
@@ -166,46 +257,64 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     }
 
+    const onPreviewClick = () => {
+      void togglePlay()
+    }
+
     return (
       <section className={className ?? 'w-full'}>
-        <div className="relative w-full overflow-hidden rounded-lg border border-gray-200 bg-black pt-[56.25%]">
-          {videoUrl ? (
+        <div className="flex w-full justify-center">
+          <div className="w-full max-w-[680px]">
+            <div
+              className={[
+                'relative w-full overflow-hidden border border-gray-200 bg-black pt-[56.25%]',
+                videoUrl ? 'cursor-pointer' : '',
+              ].join(' ')}
+              onClick={onPreviewClick}
+            >
             <video
               ref={videoRef}
-              className="absolute inset-0 h-full w-full object-contain"
+              className="absolute inset-0 h-full w-full object-cover"
               playsInline
+              preload="auto"
             />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
-              <div className="text-center">
-                <div className="text-sm font-semibold text-gray-900">No video loaded</div>
-                <div className="mt-1 text-sm text-gray-600">Upload a video to preview and sync playback</div>
+
+            {!videoUrl ? (
+              <div className="absolute inset-0 flex items-center justify-center bg-gray-100">
+                <div className="text-center">
+                  <div className="text-sm font-semibold text-gray-900">No video loaded</div>
+                  <div className="mt-1 text-sm text-gray-600">Upload a video to preview and sync playback</div>
+                </div>
+              </div>
+            ) : null}
+            </div>
+
+            <div className="mt-0 grid grid-cols-3 items-center gap-3">
+              <div className="flex justify-start" aria-hidden="true" />
+
+              <button
+                type="button"
+                onClick={togglePlay}
+                disabled={!videoUrl}
+                className={[
+                  'inline-flex items-center justify-center bg-white px-4 py-2 text-gray-900',
+                  'hover:bg-gray-100',
+                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                  !videoUrl ? 'opacity-50 cursor-not-allowed' : '',
+                ].join(' ')}
+                aria-label={isPlaying ? 'Pause' : 'Play'}
+                title={isPlaying ? 'Pause' : 'Play'}
+                style={{ justifySelf: 'center' }}
+              >
+                {isPlaying ? <PauseIcon /> : <PlayIcon />}
+              </button>
+
+              <div className="justify-self-end font-mono text-sm text-gray-700">
+                <span ref={timeLabelRef}>00:00</span>
+                <span className="mx-2 text-gray-400">/</span>
+                <span ref={durationLabelRef}>{durationLabel}</span>
               </div>
             </div>
-          )}
-        </div>
-
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <button
-            type="button"
-            onClick={togglePlay}
-            disabled={!videoUrl}
-            className={[
-              'inline-flex items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-900',
-              'hover:bg-gray-50',
-              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-              !videoUrl ? 'opacity-50 cursor-not-allowed' : '',
-            ].join(' ')}
-            aria-label={isPlaying ? 'Pause' : 'Play'}
-          >
-            {isPlaying ? <PauseIcon /> : <PlayIcon />}
-            {isPlaying ? 'Pause' : 'Play'}
-          </button>
-
-          <div className="font-mono text-sm text-gray-700">
-            <span ref={timeLabelRef}>00:00</span>
-            <span className="mx-2 text-gray-400">/</span>
-            <span ref={durationLabelRef}>{durationLabel}</span>
           </div>
         </div>
       </section>

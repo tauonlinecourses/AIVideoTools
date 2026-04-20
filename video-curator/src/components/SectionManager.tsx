@@ -97,12 +97,12 @@ export function SectionManager() {
               <div
                 key={section.id}
                 className={[
-                  'flex items-center gap-3 rounded-lg border px-3 py-2',
+                  'flex items-center gap-3 border px-3 py-2',
                   muted ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white',
                 ].join(' ')}
               >
                 <span
-                  className={['h-3 w-3 shrink-0 rounded-full', muted ? 'opacity-40' : ''].join(' ')}
+                  className={['h-3 w-3 shrink-0', muted ? 'opacity-40' : ''].join(' ')}
                   style={{ backgroundColor: section.color }}
                   aria-hidden="true"
                 />
@@ -124,7 +124,7 @@ export function SectionManager() {
                         }
                       }}
                       className={[
-                        'w-full rounded-md border border-gray-300 bg-white px-2 py-1',
+                        'w-full border border-gray-300 bg-white px-2 py-1',
                         'text-sm font-semibold text-gray-900',
                         'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                       ].join(' ')}
@@ -172,7 +172,7 @@ export function SectionManager() {
                   <label
                     htmlFor={switchId}
                     className={[
-                      'relative inline-flex h-6 w-11 cursor-pointer items-center rounded-full border transition-colors',
+                      'relative inline-flex h-6 w-11 cursor-pointer items-center border transition-colors',
                       'focus-within:outline-none focus-within:ring-2 focus-within:ring-black focus-within:ring-offset-2',
                       'peer-checked:border-black peer-checked:bg-black',
                       'border-gray-300 bg-white',
@@ -180,7 +180,7 @@ export function SectionManager() {
                   >
                     <span
                       className={[
-                        'inline-block h-5 w-5 transform rounded-full bg-white transition-transform',
+                        'inline-block h-5 w-5 transform bg-white transition-transform',
                         'translate-x-0.5 border border-gray-300',
                         'peer-checked:translate-x-5 peer-checked:border-white',
                       ].join(' ')}
@@ -225,7 +225,7 @@ export function SectionManager() {
                     : undefined
           }
           className={[
-            'rounded-md border px-3 py-2 text-sm font-semibold',
+            'border px-3 py-2 text-sm font-semibold',
             disableExports || videoFile == null
               ? 'border-gray-200 bg-gray-50 text-gray-500'
               : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
@@ -252,7 +252,7 @@ export function SectionManager() {
                   : undefined
           }
           className={[
-            'rounded-md border px-3 py-2 text-sm font-semibold',
+            'border px-3 py-2 text-sm font-semibold',
             disableExports ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
           ].join(' ')}
         >
@@ -269,9 +269,9 @@ export function SectionManager() {
           <div className="flex items-baseline justify-between text-xs text-gray-600">
             <div>Processing... {exportProgress}%</div>
           </div>
-          <div className="mt-2 h-2 w-full rounded-full bg-gray-200">
+          <div className="mt-2 h-2 w-full bg-gray-200">
             <div
-              className="h-2 rounded-full bg-black transition-[width]"
+              className="h-2 bg-black transition-[width]"
               style={{ width: `${Math.max(0, Math.min(100, exportProgress))}%` }}
               aria-hidden="true"
             />
@@ -280,12 +280,12 @@ export function SectionManager() {
       ) : null}
 
       {exportError ? (
-        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3">
+        <div className="mt-3 border border-red-200 bg-red-50 p-3">
           <div className="text-sm font-semibold text-red-800">Export failed</div>
           <div className="mt-1 text-sm text-red-700">{exportError}</div>
           <button
             type="button"
-            className="mt-2 rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+            className="mt-2 border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
             onClick={() => {
               setExportError(null)
               setExportProgress(0)

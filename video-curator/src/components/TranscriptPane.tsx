@@ -142,7 +142,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
     if (srtItems.length === 0) {
       return (
-        <section className={cx('flex h-full flex-col rounded-lg border border-gray-200 bg-white', className)}>
+        <section className={cx('flex h-full flex-col border border-gray-200 bg-white', className)}>
           <div className="border-b border-gray-200 px-4 py-3">
             <div className="text-sm font-semibold text-gray-900">Transcript</div>
           </div>
@@ -155,7 +155,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
     return (
       <section
-        className={cx('flex h-full flex-col rounded-lg border border-gray-200 bg-white', className)}
+        className={cx('flex h-full flex-col border border-gray-200 bg-white', className)}
       >
         <div className="border-b border-gray-200 px-4 py-3">
           <div className="text-sm font-semibold text-gray-900">Transcript</div>
@@ -236,7 +236,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                       {isRTL ? (
                         <>
                           <div
-                            className={cx('min-w-0 rounded-sm', borderSideClass)}
+                            className={cx('min-w-0', borderSideClass)}
                             style={isRTL ? { borderRightColor: borderColor } : { borderLeftColor: borderColor }}
                           >
                             <div className="px-3 py-0">
@@ -259,7 +259,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                             {showSectionLabel ? marginLabel : null}
                           </div>
                           <div
-                            className={cx('min-w-0 rounded-sm', borderSideClass)}
+                            className={cx('min-w-0', borderSideClass)}
                             style={isRTL ? { borderRightColor: borderColor } : { borderLeftColor: borderColor }}
                           >
                             <div className="px-3 py-0">
@@ -288,7 +288,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                               moveSentenceUp(meta.sectionId, 0)
                             }}
                             className={[
-                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center rounded-sm',
+                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center',
                               'text-gray-400 hover:text-gray-700',
                               'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                             ].join(' ')}
@@ -307,7 +307,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                               moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
                             }}
                             className={[
-                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center rounded-sm',
+                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center',
                               'text-gray-400 hover:text-gray-700',
                               'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                             ].join(' ')}

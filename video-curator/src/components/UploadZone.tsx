@@ -109,7 +109,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
         onDragOver={onDragOver}
         onDragLeave={onDragLeave}
         className={cx(
-          'w-full rounded-lg border px-4 py-3 text-left transition-colors',
+          'w-full border px-4 py-3 text-left transition-colors',
           'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
           isDragOver ? 'border-black bg-gray-50' : 'border-gray-200 bg-white',
           isLoaded ? 'border-gray-300' : '',
@@ -134,7 +134,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
             </div>
           </div>
 
-          <div className="shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-900">
+          <div className="shrink-0 border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-900">
             {isLoaded ? 'Loaded' : isDragOver ? 'Release' : 'Upload'}
           </div>
         </div>

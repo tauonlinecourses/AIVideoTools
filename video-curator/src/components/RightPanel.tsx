@@ -6,7 +6,7 @@ import { UploadZone, type UploadZoneHandle } from './UploadZone'
 function Spinner() {
   return (
     <span
-      className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white"
+      className="inline-block h-4 w-4 animate-spin border-2 border-white/40 border-t-white"
       aria-hidden="true"
     />
   )
@@ -63,24 +63,7 @@ export function RightPanel() {
             </li>
           </ol>
 
-          <div className="mt-6 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => videoRef.current?.openFileDialog()}
-              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
-            >
-              Upload Video
-            </button>
-            <button
-              type="button"
-              onClick={() => transcriptRef.current?.openFileDialog()}
-              className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-900 hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2"
-            >
-              Upload Transcript
-            </button>
-          </div>
-
-          <div className="mt-3 space-y-2">
+          <div className="mt-6 space-y-2">
             <UploadZone ref={videoRef} fileType="video" />
             <UploadZone ref={transcriptRef} fileType="transcript" />
           </div>
@@ -91,7 +74,7 @@ export function RightPanel() {
               disabled={!canGenerate}
               onClick={() => generateSections()}
               className={[
-                'inline-flex w-full items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-semibold',
+                'inline-flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-semibold',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                 canGenerate
                   ? 'bg-black text-white hover:bg-gray-900'
@@ -119,7 +102,7 @@ export function RightPanel() {
           </div>
 
           {generateError ? (
-            <div className="mt-3 rounded-md border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
+            <div className="mt-3 border border-yellow-300 bg-yellow-50 px-3 py-2 text-sm text-yellow-900">
               {generateError}
             </div>
           ) : null}

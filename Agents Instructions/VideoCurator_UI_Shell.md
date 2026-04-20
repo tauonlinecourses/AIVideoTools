@@ -8,6 +8,8 @@ This document describes the Phase 3 UI shell implementation for the Video Curato
 - Minimal UI, high contrast
 - No gradients, no heavy shadows
 - Tailwind utility classes only
+- No rounded corners anywhere (do not use Tailwind `rounded*` utilities)
+  - Exception: `Timeline` uses a subtle `rounded-[3px]` to match editing-software styling.
 
 ## Source of truth: Zustand store
 Store hook: `video-curator/src/lib/store.ts` exports `useStore()`.
@@ -67,7 +69,7 @@ Path: `video-curator/src/components/RightPanel.tsx`
 
 Responsibilities:
 - Renders one of three UI states (A/B/C) based on store values
-- Provides two “Upload …” buttons that open the file picker for each `UploadZone`
+- Provides two `UploadZone` rows (Video + Transcript) for click-to-upload and drag/drop
 - Provides “Generate Sections” button wired to `generateSections()`
 - Shows `SectionManager` after generation
 
@@ -78,7 +80,7 @@ Derived from `useStore()`:
   - UI:
     - Title “Video Curator”
     - Steps 1–4 (static text)
-    - Upload buttons
+    - Upload zones (video + transcript)
     - Generate button disabled
 - **State B — Ready to generate**:
   - Condition: `sections.length === 0` AND `videoFile !== null` AND `srtItems.length > 0`
@@ -273,8 +275,10 @@ Interactions:
   - Also calls `onSeek(sectionStartTime)`
 
 Empty state:
-- When `sections.length === 0`, the timeline shows a flat light gray bar with muted text:
-  - “Sections will appear here after generation”
+- When `sections.length === 0`, the timeline is still shown as a scrub-able bar driven by the uploaded video’s metadata:
+  - Uses `store.videoDuration` for the time axis (so seeking works immediately after upload)
+  - Shows a “filmstrip” background by repeating a captured still (`store.timelinePosterUrl`) across the full width (editing-software style)
+  - Falls back to a plain light background until the first frame is captured
 
 ## Phase 6: Video Player + Sync Loop
 
@@ -283,15 +287,22 @@ Path: `video-curator/src/components/VideoPlayer.tsx`
 
 Responsibilities:
 - Render a native HTML `<video>` element (no third-party player library).
-- Maintain a 16:9 preview area that fills the available width.
+- Maintain a 16:9 preview area that fills the available width (within the player max width).
 - When `store.videoUrl` is `null`, show a gray placeholder instead of the `<video>` element.
 - Provide minimal custom controls (do **not** use the browser’s default `controls` attribute):
-  - Play/Pause toggle button (inline SVG icons)
+  - Play/Pause toggle button (inline SVG icons, icon-only)
   - Time display text: `MM:SS / MM:SS`
+UI details:
+- The video preview uses a fill strategy (cropping if needed) to avoid letterboxing/pillarboxing.
+- Controls layout: play/pause is centered under the video, while the time display is aligned to the right on the same row.
+- The video preview surface supports click-to-toggle play/pause (same behavior as the Play/Pause button).
 
 Store fields used:
 - `videoUrl`
 - `setCurrentTime(t)`
+
+Implementation note:
+- The `<video>` element is only rendered when `store.videoUrl` is set; event listeners (play/pause/ended/metadata) must be attached when the element mounts/changes so the play button icon stays in sync.
 
 #### Video source behavior
 - The `<video>` element’s `src` is driven by `store.videoUrl` inside a `useEffect`:

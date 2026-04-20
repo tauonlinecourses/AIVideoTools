@@ -16,6 +16,10 @@ export interface AppState {
   videoUrl: string | null
   rawSrt: string | null
 
+  // Video metadata (drives timeline before sections exist)
+  videoDuration: number
+  timelinePosterUrl: string | null
+
   // Parsed data
   srtItems: SrtItem[]
   isRTL: boolean
@@ -30,6 +34,7 @@ export interface AppState {
 
   // Actions
   setVideoFile: (file: File) => void
+  setVideoMeta: (meta: { duration: number; timelinePosterUrl: string | null }) => void
   setSrtItems: (items: SrtItem[], isRTL: boolean) => void
   setSections: (sections: Section[]) => void
   setIsGenerating: (val: boolean) => void
@@ -59,6 +64,8 @@ export const useStore = create<AppState>((set) => ({
   videoFile: null,
   videoUrl: null,
   rawSrt: null,
+  videoDuration: 0,
+  timelinePosterUrl: null,
   srtItems: [],
   isRTL: false,
   sections: [],
@@ -69,7 +76,15 @@ export const useStore = create<AppState>((set) => ({
   // Actions
   setVideoFile: (file) => set({
     videoFile: file,
-    videoUrl: URL.createObjectURL(file)
+    videoUrl: URL.createObjectURL(file),
+    videoDuration: 0,
+    timelinePosterUrl: null,
+    currentTime: 0,
+  }),
+
+  setVideoMeta: (meta) => set({
+    videoDuration: Number.isFinite(meta.duration) && meta.duration > 0 ? meta.duration : 0,
+    timelinePosterUrl: meta.timelinePosterUrl,
   }),
 
   setSrtItems: (items, isRTL) => set({
