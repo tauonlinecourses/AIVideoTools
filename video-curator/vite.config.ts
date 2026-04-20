@@ -35,14 +35,15 @@ export default defineConfig(({ mode }) => {
             let raw = ''
             req.on('data', (chunk) => (raw += chunk))
             req.on('end', async () => {
-              let body: any = null
+              let body: unknown = null
               try {
                 body = JSON.parse(raw || '{}')
               } catch {
                 body = null
               }
 
-              const prompt = body?.prompt
+              const prompt =
+                body && typeof body === 'object' && 'prompt' in body ? (body as { prompt?: unknown }).prompt : undefined
               if (!prompt || typeof prompt !== 'string') {
                 res.statusCode = 400
                 res.setHeader('Content-Type', 'application/json')
@@ -91,10 +92,11 @@ export default defineConfig(({ mode }) => {
                 res.statusCode = 200
                 res.setHeader('Content-Type', 'application/json')
                 res.end(JSON.stringify({ content }))
-              } catch (err: any) {
+              } catch (err: unknown) {
                 res.statusCode = 500
                 res.setHeader('Content-Type', 'application/json')
-                res.end(JSON.stringify({ error: 'Server error', details: String(err?.message ?? err) }))
+                const message = err instanceof Error ? err.message : String(err)
+                res.end(JSON.stringify({ error: 'Server error', details: message }))
               }
             })
           })

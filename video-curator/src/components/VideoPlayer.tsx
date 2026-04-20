@@ -74,8 +74,6 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       } else {
         video.removeAttribute('src')
         video.load()
-        setDuration(0)
-        setIsPlaying(false)
         currentTimeRef.current = 0
         lastSyncedTime.current = 0
         const timeEl = timeLabelRef.current

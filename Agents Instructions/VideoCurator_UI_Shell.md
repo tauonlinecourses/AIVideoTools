@@ -105,8 +105,42 @@ Responsibilities:
   - enable/disable toggle calling `toggleSection(section.id)`
   - disabled sections are muted and struck through
 - Bottom:
-  - `Download Video` button (disabled placeholder)
-  - `Download Transcript` button (disabled placeholder)
+  - `Download Video` button (exports curated video)
+  - `Download Transcript` button (exports curated transcript)
+
+Export behavior:
+- **Disable rules (both buttons)**:
+  - Disabled when `store.sections.length === 0`
+  - Disabled when all sections are toggled off (`section.isEnabled === false` for all sections)
+  - Disabled while an export is in progress
+  - Shows a muted helper label `No sections enabled` when sections exist but all are disabled
+- **Download Transcript**:
+  - Synchronous export (no loading UI)
+  - Only enabled sections are included
+  - Implementation: `video-curator/src/lib/exportSrt.ts`
+  - Re-timing rules:
+    - Cues are collected in the current UI order from enabled sections
+    - Cues are re-numbered starting at 1
+    - Each cue keeps its original duration \(endTime - startTime\)
+    - New timing is packed contiguously:
+      - `newStart` = previous cue `newEnd`
+      - `newEnd` = `newStart + duration`
+    - Timestamps are formatted as SRT `HH:MM:SS,mmm`
+- **Download Video**:
+  - Uses **ffmpeg.wasm** and is **lazy-loaded** on first export click (never on app startup)
+  - Implementation: `video-curator/src/lib/exportVideo.ts`
+  - Pipeline:
+    - For each enabled section, derive `startTime` from the first item and `endTime` from the last item
+    - Create `segment_i.mp4` files by **re-encoding** (H.264/AAC) to guarantee clean cuts that start with a decodable video frame
+      - Rationale: stream copy can start on a non-keyframe → audio starts immediately but video may stay black until the next keyframe
+    - Concatenate segments using the concat demuxer (`concat.txt` → `output.mp4`)
+  - Progress:
+    - Displays a simple progress bar with label `Processing... {n}%`
+    - Progress is clamped to 0–100 for UI safety
+  - Errors:
+    - On failure, a red error panel is shown and export can be retried
+  - Cleanup:
+    - Best-effort deletes ffmpeg virtual filesystem artifacts: `input.mp4`, `output.mp4`, `concat.txt`, and all `segment_i.mp4` files
 
 Duration calculation:
 - For section items \(SrtItem[]\):

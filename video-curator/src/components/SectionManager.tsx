@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, type Section } from '../lib/store'
+import { exportSrt } from '../lib/exportSrt'
+import { exportVideo } from '../lib/exportVideo'
 
 function formatMMSS(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
@@ -18,12 +20,17 @@ function sectionDurationSeconds(section: Section): number {
 
 export function SectionManager() {
   const sections = useStore(s => s.sections)
+  const videoFile = useStore(s => s.videoFile)
   const toggleSection = useStore(s => s.toggleSection)
   const renameSection = useStore(s => s.renameSection)
 
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
+
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState(0)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   const editingOriginalTitle = useMemo(() => {
     if (editingSectionId == null) return null
@@ -43,6 +50,20 @@ export function SectionManager() {
     }
     return map
   }, [sections])
+
+  const enabledSectionsCount = useMemo(() => sections.filter(s => s.isEnabled).length, [sections])
+  const hasEnabledSections = enabledSectionsCount > 0
+  const hasSections = sections.length > 0
+  const disableExports = !hasSections || !hasEnabledSections || isExporting
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -176,19 +197,104 @@ export function SectionManager() {
       <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-200 pt-4">
         <button
           type="button"
-          disabled
-          className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500"
+          disabled={disableExports || videoFile == null}
+          onClick={async () => {
+            if (disableExports || videoFile == null) return
+            setIsExporting(true)
+            setExportProgress(0)
+            setExportError(null)
+            try {
+              const blob = await exportVideo(videoFile, sections, setExportProgress)
+              downloadBlob(blob, 'curated-video.mp4')
+            } catch (err) {
+              const message = err instanceof Error ? err.message : 'Export failed. Please try again.'
+              setExportError(message)
+            } finally {
+              setIsExporting(false)
+            }
+          }}
+          title={
+            !hasSections
+              ? 'No sections yet'
+              : !hasEnabledSections
+                ? 'No sections enabled'
+                : videoFile == null
+                  ? 'No video loaded'
+                  : isExporting
+                    ? 'Processing...'
+                    : undefined
+          }
+          className={[
+            'rounded-md border px-3 py-2 text-sm font-semibold',
+            disableExports || videoFile == null
+              ? 'border-gray-200 bg-gray-50 text-gray-500'
+              : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
+          ].join(' ')}
         >
           Download Video
         </button>
         <button
           type="button"
-          disabled
-          className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-sm font-semibold text-gray-500"
+          disabled={disableExports}
+          onClick={() => {
+            if (disableExports) return
+            const srtString = exportSrt(sections)
+            const blob = new Blob([srtString], { type: 'text/plain' })
+            downloadBlob(blob, 'curated-transcript.srt')
+          }}
+          title={
+            !hasSections
+              ? 'No sections yet'
+              : !hasEnabledSections
+                ? 'No sections enabled'
+                : isExporting
+                  ? 'Processing...'
+                  : undefined
+          }
+          className={[
+            'rounded-md border px-3 py-2 text-sm font-semibold',
+            disableExports ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
+          ].join(' ')}
         >
           Download Transcript
         </button>
       </div>
+
+      {hasSections && !hasEnabledSections ? (
+        <div className="mt-2 text-xs text-gray-500">No sections enabled</div>
+      ) : null}
+
+      {isExporting ? (
+        <div className="mt-3">
+          <div className="flex items-baseline justify-between text-xs text-gray-600">
+            <div>Processing... {exportProgress}%</div>
+          </div>
+          <div className="mt-2 h-2 w-full rounded-full bg-gray-200">
+            <div
+              className="h-2 rounded-full bg-black transition-[width]"
+              style={{ width: `${Math.max(0, Math.min(100, exportProgress))}%` }}
+              aria-hidden="true"
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {exportError ? (
+        <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3">
+          <div className="text-sm font-semibold text-red-800">Export failed</div>
+          <div className="mt-1 text-sm text-red-700">{exportError}</div>
+          <button
+            type="button"
+            className="mt-2 rounded-md border border-red-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-red-800 hover:bg-red-100"
+            onClick={() => {
+              setExportError(null)
+              setExportProgress(0)
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }

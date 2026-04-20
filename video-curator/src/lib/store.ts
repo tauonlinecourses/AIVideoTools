@@ -97,7 +97,7 @@ export const useStore = create<AppState>((set) => ({
     )
   })),
 
-  moveSentenceUp: (sectionId, _itemIndex) => set((state) => {
+  moveSentenceUp: (sectionId, itemIndex) => set((state) => {
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx <= 0) return {}
@@ -106,7 +106,9 @@ export const useStore = create<AppState>((set) => ({
     const fromSection = { ...sections[fromIdx], items: [...sections[fromIdx].items] }
     const toSection = { ...sections[toIdx], items: [...sections[toIdx].items] }
 
-    const [item] = fromSection.items.splice(0, 1)
+    const idx = Math.min(Math.max(0, itemIndex), fromSection.items.length - 1)
+    const [item] = fromSection.items.splice(idx, 1)
+    if (!item) return {}
     toSection.items.push(item)
 
     sections[fromIdx] = fromSection
@@ -114,7 +116,7 @@ export const useStore = create<AppState>((set) => ({
     return { sections }
   }),
 
-  moveSentenceDown: (sectionId, _itemIndex) => set((state) => {
+  moveSentenceDown: (sectionId, itemIndex) => set((state) => {
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx >= sections.length - 1) return {}
@@ -123,7 +125,9 @@ export const useStore = create<AppState>((set) => ({
     const fromSection = { ...sections[fromIdx], items: [...sections[fromIdx].items] }
     const toSection = { ...sections[toIdx], items: [...sections[toIdx].items] }
 
-    const [item] = fromSection.items.splice(-1, 1)
+    const idx = Math.min(Math.max(0, itemIndex), fromSection.items.length - 1)
+    const [item] = fromSection.items.splice(idx, 1)
+    if (!item) return {}
     toSection.items.unshift(item)
 
     sections[fromIdx] = fromSection
@@ -144,7 +148,7 @@ export const useStore = create<AppState>((set) => ({
       if (usedFallback) {
         setGenerateError('AI segmentation failed — transcript was split into equal parts. You can adjust sections manually.')
       }
-    } catch (err) {
+    } catch {
       setGenerateError('Something went wrong. Please try again.')
     } finally {
       setIsGenerating(false)
