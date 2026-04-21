@@ -10,6 +10,7 @@ This document describes the Phase 3 UI shell implementation for the Video Curato
 - Tailwind utility classes only
 - No rounded corners anywhere (do not use Tailwind `rounded*` utilities)
   - Exception: `Timeline` uses a subtle `rounded-[3px]` to match editing-software styling.
+  - Exception: the 3 onboarding buttons (Upload Video, Upload Transcript, Generate Sections) use `rounded-[6px]`.
 
 ## Source of truth: Zustand store
 Store hook: `video-curator/src/lib/store.ts` exports `useStore()`.
@@ -25,12 +26,20 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
   - Local dev: `/api/segment-transcript` returns 500 “Missing OPENAI_API_KEY …”, the UI falls back to equal-sized chunks.
   - Deploy: same, until server env is configured.
 - **Security note**: Do not ship OpenAI keys to the browser. Calling OpenAI directly from `http://localhost:5173` also fails with CORS; the `/api/...` approach avoids both CORS and key exposure.
+- **AI output invariants (must hold)**:
+  - **Contiguous sections only**: every section is a single continuous index range \([start..end]\); no section may own disjoint indices.
+  - **Ordered partition**: sections are back-to-back and cover indices `0..N-1` exactly once, in order.
+  - The client validates these invariants on receipt.
+- **Prompt hardening**: the client prompt explicitly requires contiguous ranges, a self-check (concatenation must equal `0..N-1`), and an escape hatch to return `{ "sections": [] }` if the model cannot comply.
+- **Prompt format**: the model returns **range boundaries** (`startIndex`, `endIndex`, inclusive) per section (not per-sentence index lists) so the client can enforce contiguity by construction.
+- **Retry then fallback**: if validation fails, the client retries once with an even stricter addendum; if it still fails, it falls back to equal-sized chunks.
 - **Partial AI output handling**: if the model returns sections that don’t cover every sentence index, the client attempts to **repair** the output by filling missing index ranges into one or more “Unassigned” sections (instead of falling back to equal-sized chunks immediately).
+- **Section title language**: section titles are generated in the **same language as the transcript** (Hebrew transcripts → Hebrew titles; English transcripts → English titles). If the client has to repair missing indices, “Unassigned” section titles are also localized (Hebrew: “לא משויך”).
 
 ### Store fields used in Phase 3 UI
 - **Files**: `videoFile`
 - **Transcript parse result**: `srtItems`, `isRTL`
-- **Generation**: `sections`, `isGenerating`, `generateError`
+- **Generation**: `sections`, `isGenerating`, `generateProgress`, `generateError`
 
 ### Store actions used in Phase 3 UI
 - **Upload video**: `setVideoFile(file)`
@@ -48,7 +57,7 @@ Responsibilities:
 - Shows 3 visual states:
   - empty
   - drag-over
-  - file loaded (shows filename)
+  - file uploaded (high-contrast “Uploaded” styling + filename when available)
 
 Behavior:
 - **Video upload**:
@@ -61,6 +70,17 @@ Behavior:
   - Detects RTL using `detectDirection(items)` (`video-curator/src/lib/detectDirection.ts`)
   - Stores: `setSrtItems(items, isRTL)`
 
+Uploaded-state UI details:
+- **When uploaded**:
+  - Card uses `border-black` + `bg-gray-50`
+  - Right-side status badge becomes black with a checkmark and label `Uploaded`
+- **Hover affordance**:
+  - When not uploaded, hover adds a subtle gray background (`hover:bg-gray-50`)
+  - When uploaded, the `Uploaded` badge darkens slightly on hover (`group-hover:bg-gray-900`)
+- **Transcript loaded detection**:
+  - Transcript is considered uploaded when `store.srtItems.length > 0` (even if the filename is not known)
+  - If filename is unknown, the card shows a fallback label `Transcript loaded`
+
 Imperative handle (for onboarding buttons):
 - Exposes `openFileDialog()` via `ref`, implemented with `forwardRef` + `useImperativeHandle`
 
@@ -69,8 +89,10 @@ Path: `video-curator/src/components/RightPanel.tsx`
 
 Responsibilities:
 - Renders one of three UI states (A/B/C) based on store values
-- Provides two `UploadZone` rows (Video + Transcript) for click-to-upload and drag/drop
+- Provides two `UploadZone` controls (Video + Transcript) for click-to-upload and drag/drop, displayed side-by-side
 - Provides “Generate Sections” button wired to `generateSections()`
+  - Includes the AI icon (`/public/icons/AI icon white.png`) on the left of the label
+  - Button uses a fixed height (`h-11`) for a consistent, tappable target size
 - Shows `SectionManager` after generation
 
 #### RightPanel state machine
@@ -80,14 +102,20 @@ Derived from `useStore()`:
   - UI:
     - Title “Video Curator”
     - Steps 1–4 (static text)
-    - Upload zones (video + transcript)
+    - Upload zones (video + transcript) displayed side-by-side
     - Generate button disabled
+    - No footer disclaimer text (e.g. no “light mode only” line)
 - **State B — Ready to generate**:
   - Condition: `sections.length === 0` AND `videoFile !== null` AND `srtItems.length > 0`
   - UI:
     - Same as State A
     - Generate button enabled
-    - While `isGenerating === true`, the button shows a spinner and becomes disabled
+    - While `isGenerating === true`:
+      - The button shows a spinner and becomes disabled
+      - A progress row appears below the button:
+        - Label `Generating sections…`
+        - Percentage from `generateProgress` (0–100)
+        - A simple high-contrast progress bar (no rounded corners) that fills to ~90% while waiting for the API, then completes to 100% when results arrive
 - **State C — Sections generated**:
   - Condition: `sections.length > 0`
   - UI:
@@ -146,10 +174,10 @@ Export behavior:
 
 Duration calculation:
 - For section items \(SrtItem[]\):
-  - start = `items[0].startTime`
-  - end = `items[items.length - 1].endTime`
+  - start = `min(items[].startTime)`
+  - end = `max(items[].endTime)`
   - durationSeconds = `max(0, end - start)`
-  - formatting: `MM:SS`
+  - formatting: `MM:SS` (floored, not rounded)
 - If `items` is empty: `00:00`
 
 ## App shell layout
@@ -172,25 +200,51 @@ Path: `video-curator/src/components/TranscriptPane.tsx`
 
 Responsibilities:
 - Render the full transcript (`store.srtItems`) as a vertically scrollable pane with a fixed header.
+- Visual styling:
+  - The transcript pane is **borderless** (no outer container border).
+  - The header has no bottom divider line.
+  - Sentence rows do not use horizontal divider lines between them (spacing is used instead).
 - Respect directionality:
   - Uses `dir="rtl"` when `store.isRTL === true`
   - Uses `dir="ltr"` when `store.isRTL === false`
   - This single flag controls alignment/flow of all transcript text inside the pane.
+- Per-sentence text direction:
+  - Sentence text is additionally rendered with per-row direction detection.
+  - If the sentence contains Hebrew characters, the sentence text is `dir="rtl"` and right-aligned.
+  - Otherwise, the sentence text is `dir="ltr"` and left-aligned.
 - Each sentence row shows:
   - Timestamp (`MM:SS`) using `SrtItem.startTime`
   - Sentence text (`SrtItem.text`)
+- Hover affordance:
+  - On hover, sentence rows get a subtle light-gray background to indicate click-to-seek.
+  - Active-row highlighting takes precedence over hover.
 - Section-aware styling:
-  - Each row has a colored border matching its owning section color.
+  - Each row has a vertical colored spine matching its owning section color.
+    - The spine is a real element (not a CSS border) so it can be thicker and have rounded corners (`rounded-[6px]`, like the upload buttons).
+    - The spine sits on the **outer edge of the full row** (it wraps both timestamp + text), so no row content renders “past” the spine on either side (LTR/RTL).
+    - Rounding rules:
+      - The spine begins on the **section header row** (title row) for each section.
+      - Only the **top** of the section header spine is rounded.
+      - Only the **bottom** of the last sentence in a section is rounded.
+      - Single-sentence sections are rounded on both ends.
   - Ownership is derived by mapping `section.items[].index` → section metadata (memoized lookup).
   - If a sentence is not assigned to any section yet, border is neutral gray.
   - Disabled sections (`section.isEnabled === false`) render at ~40% opacity, but remain clickable.
+  - The border column stretches to the full row height (including when the section label makes the first row taller), so the vertical spine does not “break” on the first sentence.
+  - Vertical spacing rules:
+    - Consecutive sentences that belong to the same section have **no vertical gap** between rows, so the colored border reads as a continuous vertical spine.
+    - When the section changes between adjacent sentences, a slightly larger vertical gap is shown between the rows to clearly separate sections.
 - Active sentence highlight:
   - The sentence is considered active when `store.currentTime` falls between its `startTime` and `endTime`.
   - Active rows use a light background matching the section color at low opacity (~10%).
-- Section label in margin:
-  - Only for the **first sentence** of each section, display `{section.title}` and the section duration (`MM:SS`) in the margin on the border side:
-    - LTR: label column on the left of the bordered content
-    - RTL: label column on the right of the bordered content
+- Section header (title row):
+  - When a new section starts (i.e., the current sentence is the first sentence of a section), a **section header row** is inserted **above** that section’s first sentence.
+  - The header shows:
+    - section duration (`MM:SS`) on the left
+    - `{section.title}` (truncated if needed) on the right
+  - Layout note:
+    - Duration and title are rendered adjacent (not spread to opposite edges), with the title in a slightly larger font.
+  - The prior “name/margin column” layout is not used; sentence rows are a 2-column layout (timestamp + text) for both LTR and RTL.
 
 Props:
 - `onSeek(time: number)`: called when the user clicks a sentence row (uses the sentence `startTime`).
@@ -203,7 +257,7 @@ Boundary editing chevrons:
   - `store.moveSentenceUp(sectionId, 0)`
 - On the **last sentence** of each section (except the very last section), a subtle hover-only `↓` button is shown that calls:
   - `store.moveSentenceDown(sectionId, lastIndex)`
-- Chevrons are only visible when hovering the relevant sentence row (Tailwind `group-hover`).
+- Chevrons are shown **always** (not hover-only), and are placed **inside the timestamp column** of the relevant sentence row (adjacent to the sentence timestamp).
 
 Auto-scroll during playback:
 - When `store.currentTime` changes and causes the **active sentence index** to change, the pane scrolls the active sentence into view smoothly.
@@ -235,8 +289,8 @@ Layout:
 
 Section blocks:
 - Section duration is computed from section transcript items:
-  - `start = items[0].startTime`
-  - `end = items[items.length - 1].endTime`
+  - `start = min(items[].startTime)`
+  - `end = max(items[].endTime)`
   - `durationSeconds = max(0, end - start)`
 - Total duration:
   - `totalDuration = sum(sectionDurationSeconds)`
@@ -258,11 +312,15 @@ repeating-linear-gradient(
 ```
 
 Titles / tooltips:
-- If a block is wider than `80px`, its title is shown in-block (white, `11px`, truncated).
+- If a block is wider than `80px`, its title is shown in-block (white, `11px`, truncated, **right-aligned within the block**).
+  - Truncation shows the ellipsis on the **left** side (so the end of the title stays closest to the right edge).
 - If too narrow, the title is hidden and shown via a hover tooltip (HTML `title`) including title and duration.
+ - The last section block keeps the same proportional width as the others, but its **title text** gets a bit of extra right padding so it doesn’t visually touch the timeline edge.
 
 Scrubber:
-- A thin vertical line (`2px`, dark gray) indicates current playback position:
+- A high-contrast playhead indicates current playback position:
+  - A vertical line (`3px`, black)
+  - A small upside-down (down-pointing) black triangle marker rendered **above the timeline bar**, aligned to the line
   - `pct = (currentTime / totalDuration) * 100`
 - Updated via `requestAnimationFrame` by directly setting `scrubberRef.current.style.left = pct + '%'`.
 - The rAF loop is started in `useEffect` and cancelled on unmount to avoid leaks.
@@ -387,7 +445,9 @@ Inline title editing:
 Path: `video-curator/src/components/TranscriptPane.tsx`
 
 Boundary editing buttons:
-- Shown only on hover of the relevant sentence row using `group` + `group-hover`.
+- Shown **always** (not hover-only).
+- Placement:
+  - Rendered inside the timestamp cell of the sentence row, adjacent to the timestamp.
 - Up chevron (`↑`):
   - Only on the **first sentence** of a section, except for the first section overall.
   - Calls `moveSentenceUp(section.id, 0)` to move that sentence to the previous section.
@@ -396,6 +456,9 @@ Boundary editing buttons:
   - Only on the **last sentence** of a section, except for the last section overall.
   - Calls `moveSentenceDown(section.id, lastItemIndex)` to move that sentence to the next section.
   - Tooltip: “Move to next section”
+- Visual affordance:
+  - Borderless, transparent buttons (no background) with a larger tap/click target and bold, high-contrast arrow glyphs.
+  - On hover, the arrow glyph scales up slightly (for extra discoverability).
 - Guard:
   - If a section has **≤ 1 sentence**, boundary chevrons are not shown for that section (moving the only sentence is not allowed).
 

@@ -31,13 +31,25 @@ function formatMMSS(totalSeconds: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
+function formatMMSSFloor(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
+  const floored = Math.max(0, Math.floor(totalSeconds))
+  const mm = Math.floor(floored / 60)
+  const ss = floored % 60
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+}
+
 function sectionStartEnd(section: Section): { start: number; end: number } {
-  const first = section.items[0]
-  const last = section.items[section.items.length - 1]
-  return {
-    start: first?.startTime ?? 0,
-    end: last?.endTime ?? first?.startTime ?? 0,
+  if (!section.items || section.items.length === 0) return { start: 0, end: 0 }
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = 0
+  for (const it of section.items) {
+    if (!it) continue
+    if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+    if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
   }
+  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return { start: 0, end: 0 }
+  return { start: minStart, end: maxEnd }
 }
 
 function sectionDurationSeconds(section: Section): number {
@@ -133,7 +145,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     <div
       ref={containerRef}
       className={[
-        'relative h-12 w-full overflow-hidden border border-gray-200 bg-white',
+        'relative h-12 w-full overflow-visible border border-gray-200 bg-white',
         'rounded-[3px]',
         className ?? '',
       ].join(' ')}
@@ -185,10 +197,11 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
             ) : null}
           </div>
         ) : (
-          blocks.map((b) => {
+          blocks.map((b, idx) => {
             const blockWidthPx = containerWidthPx > 0 ? (b.widthPct / 100) * containerWidthPx : 0
             const canShowTitle = blockWidthPx > 80
-            const tooltip = `${b.title} • ${formatMMSS(b.duration)}`
+            const tooltip = `${b.title} • ${formatMMSSFloor(b.duration)}`
+            const isLast = idx === blocks.length - 1
 
             return (
               <button
@@ -225,9 +238,12 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
                 ) : null}
 
                 {canShowTitle ? (
-                  <div className="flex h-full items-center px-2">
-                    <div className="min-w-0 truncate text-[11px] font-medium text-white">
-                      {b.title}
+                  <div className={['flex h-full items-center justify-end px-2', isLast ? 'pr-4' : ''].join(' ')}>
+                    <div
+                      className="min-w-0 truncate text-[11px] font-medium text-white text-right"
+                      style={{ direction: 'rtl' }}
+                    >
+                      <span dir="ltr">{b.title}</span>
                     </div>
                   </div>
                 ) : null}
@@ -239,10 +255,22 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
 
       <div
         ref={scrubberRef}
-        className="pointer-events-none absolute top-0 h-full w-[2px] bg-gray-700"
+        className="pointer-events-none absolute top-0 h-full w-[3px] bg-black"
         style={{ left: '0%' }}
         aria-hidden="true"
-      />
+      >
+        <div
+          className={[
+            'absolute left-1/2 -translate-x-1/2 -ml-[0.4px]',
+            '-top-[7px]',
+            'w-0 h-0',
+            'border-l-[6px] border-l-transparent',
+            'border-r-[6px] border-r-transparent',
+            'border-t-[8px] border-t-black',
+          ].join(' ')}
+          aria-hidden="true"
+        />
+      </div>
     </div>
   )
 }

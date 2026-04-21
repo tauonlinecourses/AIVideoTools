@@ -17,11 +17,14 @@ export function RightPanel() {
   const srtItemsCount = useStore(s => s.srtItems.length)
   const sectionsCount = useStore(s => s.sections.length)
   const isGenerating = useStore(s => s.isGenerating)
+  const generateProgress = useStore(s => s.generateProgress)
   const generateError = useStore(s => s.generateError)
   const generateSections = useStore(s => s.generateSections)
 
   const videoRef = useRef<UploadZoneHandle | null>(null)
   const transcriptRef = useRef<UploadZoneHandle | null>(null)
+
+  const aiIconSrc = '/icons/AI%20icon%20white.png'
 
   const state = useMemo(() => {
     if (sectionsCount > 0) return 'C'
@@ -63,9 +66,9 @@ export function RightPanel() {
             </li>
           </ol>
 
-          <div className="mt-6 space-y-2">
-            <UploadZone ref={videoRef} fileType="video" />
-            <UploadZone ref={transcriptRef} fileType="transcript" />
+          <div className="mt-6 grid grid-cols-2 gap-2">
+            <UploadZone ref={videoRef} fileType="video" className="min-w-0" />
+            <UploadZone ref={transcriptRef} fileType="transcript" className="min-w-0" />
           </div>
 
           <div className="mt-6">
@@ -74,25 +77,53 @@ export function RightPanel() {
               disabled={!canGenerate}
               onClick={() => generateSections()}
               className={[
-                'inline-flex w-full items-center justify-center gap-2 px-3 py-2 text-sm font-semibold',
+                'inline-flex h-11 w-full items-center justify-center gap-2 px-3 text-sm font-semibold rounded-[6px]',
                 'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                 canGenerate
                   ? 'bg-black text-white hover:bg-gray-900'
                   : 'bg-gray-100 text-gray-500',
               ].join(' ')}
             >
+              <img
+                src={aiIconSrc}
+                alt=""
+                aria-hidden="true"
+                className={[
+                  'h-4 w-4 shrink-0',
+                  canGenerate ? '' : 'invert',
+                ].join(' ')}
+              />
               {isGenerating ? <Spinner /> : null}
               <span>Generate Sections</span>
             </button>
+
+            {isGenerating ? (
+              <div className="mt-3">
+                <div className="flex items-center justify-between text-[11px] text-gray-700">
+                  <span>Generating sections…</span>
+                  <span className="tabular-nums">{Math.max(0, Math.min(100, generateProgress))}%</span>
+                </div>
+                <div
+                  className="mt-1 h-2 w-full border border-gray-300 bg-white"
+                  role="progressbar"
+                  aria-label="Generating sections"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.max(0, Math.min(100, generateProgress))}
+                >
+                  <div
+                    className="h-full bg-black transition-[width] duration-200 ease-out"
+                    style={{ width: `${Math.max(0, Math.min(100, generateProgress))}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
+
             <div className="mt-2 text-xs text-gray-600">
               {state === 'A'
                 ? 'Upload both files to enable generation.'
                 : 'Ready to generate sections from your transcript.'}
             </div>
-          </div>
-
-          <div className="mt-auto pt-6 text-xs text-gray-500">
-            Light mode only. Minimal, high-contrast UI.
           </div>
         </div>
       ) : (

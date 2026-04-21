@@ -27,6 +27,7 @@ export interface AppState {
   // Sections
   sections: Section[]
   isGenerating: boolean
+  generateProgress: number // 0..100 (UI only; simulated while waiting for API)
   generateError: string | null
 
   // Playback
@@ -38,6 +39,7 @@ export interface AppState {
   setSrtItems: (items: SrtItem[], isRTL: boolean) => void
   setSections: (sections: Section[]) => void
   setIsGenerating: (val: boolean) => void
+  setGenerateProgress: (val: number) => void
   setGenerateError: (err: string | null) => void
   setCurrentTime: (t: number) => void
   toggleSection: (id: number) => void
@@ -70,6 +72,7 @@ export const useStore = create<AppState>((set) => ({
   isRTL: false,
   sections: [],
   isGenerating: false,
+  generateProgress: 0,
   generateError: null,
   currentTime: 0,
 
@@ -96,6 +99,10 @@ export const useStore = create<AppState>((set) => ({
 
   setIsGenerating: (val) => set({ isGenerating: val }),
 
+  setGenerateProgress: (val) => set({
+    generateProgress: Math.max(0, Math.min(100, Math.round(val)))
+  }),
+
   setGenerateError: (err) => set({ generateError: err }),
 
   setCurrentTime: (t) => set({ currentTime: t }),
@@ -113,6 +120,9 @@ export const useStore = create<AppState>((set) => ({
   })),
 
   moveSentenceUp: (sectionId, itemIndex) => set((state) => {
+    const normalize = (items: SrtItem[]) =>
+      [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx <= 0) return {}
@@ -126,12 +136,18 @@ export const useStore = create<AppState>((set) => ({
     if (!item) return {}
     toSection.items.push(item)
 
+    fromSection.items = normalize(fromSection.items)
+    toSection.items = normalize(toSection.items)
+
     sections[fromIdx] = fromSection
     sections[toIdx] = toSection
     return { sections }
   }),
 
   moveSentenceDown: (sectionId, itemIndex) => set((state) => {
+    const normalize = (items: SrtItem[]) =>
+      [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx >= sections.length - 1) return {}
@@ -145,20 +161,65 @@ export const useStore = create<AppState>((set) => ({
     if (!item) return {}
     toSection.items.unshift(item)
 
+    fromSection.items = normalize(fromSection.items)
+    toSection.items = normalize(toSection.items)
+
     sections[fromIdx] = fromSection
     sections[toIdx] = toSection
     return { sections }
   }),
   generateSections: async () => {
-    const { srtItems, setIsGenerating, setSections, setGenerateError } = useStore.getState()
+    const { srtItems, setIsGenerating, setGenerateProgress, setSections, setGenerateError } = useStore.getState()
 
     if (srtItems.length === 0) return
 
     setIsGenerating(true)
     setGenerateError(null)
+    setGenerateProgress(0)
+
+    // We don't get real % progress from the server; show a conservative "waiting" progress
+    // that starts a bit slower, then creeps upward and caps at 96% until completion.
+    let tick: number | null = null
+    const start = Date.now()
+    const step = () => {
+      const elapsedMs = Date.now() - start
+      // A slow-starting curve that keeps creeping upward while waiting.
+      // Approaches 96% asymptotically, never reaching it in finite time.
+      const cap = 96
+      const tauMs = 6000 // larger = slower overall
+      const raw = 1 - Math.exp(-elapsedMs / tauMs)
+      // Make the beginning feel slower.
+      const shaped = Math.pow(raw, 1.2)
+      const target = Math.floor(shaped * cap)
+      setGenerateProgress(Math.min(cap, target))
+    }
+    step()
+    tick = window.setInterval(step, 120)
 
     try {
       const { sections, usedFallback } = await segmentTranscript(srtItems)
+      // Stop the "waiting" progress ticks and smoothly finish to 100%.
+      if (tick !== null) window.clearInterval(tick)
+      tick = null
+
+      const from = useStore.getState().generateProgress
+      const durationMs = 450
+      const finishStart = Date.now()
+      await new Promise<void>((resolve) => {
+        const id = window.setInterval(() => {
+          const t = Math.min(1, (Date.now() - finishStart) / durationMs)
+          const eased = 1 - Math.pow(1 - t, 3)
+          const next = from + (100 - from) * eased
+          setGenerateProgress(next)
+          if (t >= 1) {
+            window.clearInterval(id)
+            resolve()
+          }
+        }, 16)
+      })
+
+      setGenerateProgress(100)
+      await new Promise<void>((r) => window.setTimeout(() => r(), 500))
       setSections(sections)
       if (usedFallback) {
         setGenerateError('AI segmentation failed — transcript was split into equal parts. You can adjust sections manually.')
@@ -166,7 +227,10 @@ export const useStore = create<AppState>((set) => ({
     } catch {
       setGenerateError('Something went wrong. Please try again.')
     } finally {
+      if (tick !== null) window.clearInterval(tick)
       setIsGenerating(false)
+      // Reset so the next run starts clean (and hides instantly when not generating).
+      setGenerateProgress(0)
     }
   },
 }))

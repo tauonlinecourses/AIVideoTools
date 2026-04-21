@@ -30,11 +30,25 @@ function formatMMSS(totalSeconds: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
+function formatMMSSFloor(totalSeconds: number): string {
+  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
+  const floored = Math.max(0, Math.floor(totalSeconds))
+  const mm = Math.floor(floored / 60)
+  const ss = floored % 60
+  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+}
+
 function sectionDurationSeconds(section: Section): number {
-  const first = section.items[0]
-  const last = section.items[section.items.length - 1]
-  if (!first || !last) return 0
-  return Math.max(0, last.endTime - first.startTime)
+  if (!section.items || section.items.length === 0) return 0
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = 0
+  for (const it of section.items) {
+    if (!it) continue
+    if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+    if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
+  }
+  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return 0
+  return Math.max(0, maxEnd - minStart)
 }
 
 type SentenceMeta = {
@@ -61,6 +75,11 @@ function findActiveIndex(items: SrtItem[], currentTime: number): number | null {
   return null
 }
 
+function isHebrewText(text: string): boolean {
+  // Hebrew + common RTL marks; keeps it simple and fast for per-row rendering.
+  return /[\u0590-\u05FF\u200F]/.test(text)
+}
+
 export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPaneProps>(
   function TranscriptPane({ onSeek, className }, ref) {
     const srtItems = useStore(s => s.srtItems)
@@ -82,7 +101,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
       for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
         const section = sections[sectionIndex]
-        const durationLabel = formatMMSS(sectionDurationSeconds(section))
+        const durationLabel = formatMMSSFloor(sectionDurationSeconds(section))
 
         for (let posInSection = 0; posInSection < section.items.length; posInSection++) {
           const item = section.items[posInSection]
@@ -142,8 +161,8 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
     if (srtItems.length === 0) {
       return (
-        <section className={cx('flex h-full flex-col border border-gray-200 bg-white', className)}>
-          <div className="border-b border-gray-200 px-4 py-3">
+        <section className={cx('flex h-full flex-col bg-white', className)}>
+          <div className="px-4 py-3">
             <div className="text-sm font-semibold text-gray-900">Transcript</div>
           </div>
           <div className="flex flex-1 items-center justify-center px-4 py-8 text-sm text-gray-500">
@@ -155,9 +174,9 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
     return (
       <section
-        className={cx('flex h-full flex-col border border-gray-200 bg-white', className)}
+        className={cx('flex h-full flex-col bg-white', className)}
       >
-        <div className="border-b border-gray-200 px-4 py-3">
+        <div className="px-4 py-3">
           <div className="text-sm font-semibold text-gray-900">Transcript</div>
         </div>
 
@@ -167,38 +186,31 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
           onScroll={onScroll}
           className="flex-1 overflow-y-auto"
         >
-          <div className="divide-y divide-gray-100">
-            {srtItems.map((item) => {
+          <div>
+            {srtItems.map((item, rowIdx) => {
               const meta = sentenceMetaByIndex.get(item.index) ?? null
+              const prevItem = rowIdx > 0 ? srtItems[rowIdx - 1] : null
+              const prevMeta = prevItem ? (sentenceMetaByIndex.get(prevItem.index) ?? null) : null
+              const nextItem = rowIdx < srtItems.length - 1 ? srtItems[rowIdx + 1] : null
+              const nextMeta = nextItem ? (sentenceMetaByIndex.get(nextItem.index) ?? null) : null
+              const isSameSectionAsPrev =
+                meta !== null && prevMeta !== null && meta.sectionId === prevMeta.sectionId
+              const isSameSectionAsNext =
+                meta !== null && nextMeta !== null && meta.sectionId === nextMeta.sectionId
+              const rowGapClass = rowIdx > 0 && !isSameSectionAsPrev ? 'mt-6' : ''
               const isActive = activeIndex === item.index
+              const isHebrew = isHebrewText(item.text)
 
               const borderColor = meta?.color ?? '#D1D5DB' // gray-300
-              const borderSideClass = isRTL ? 'border-r-4' : 'border-l-4'
 
               const muted = meta ? !meta.isEnabled : false
 
-              const showSectionLabel = Boolean(meta?.isFirstInSection)
+              const showSectionHeader = Boolean(meta && !isSameSectionAsPrev)
               const showUp = Boolean(
                 meta?.isFirstInSection && meta.sectionIndex > 0 && meta.sectionItemCount > 1
               )
               const showDown = Boolean(
                 meta?.isLastInSection && meta.sectionIndex < meta.sectionCount - 1 && meta.sectionItemCount > 1
-              )
-
-              const marginLabel = showSectionLabel && meta ? (
-                <div
-                  className={cx(
-                    'min-w-0 text-xs font-medium text-gray-600',
-                    muted ? 'opacity-40' : ''
-                  )}
-                >
-                  <div className="truncate">{meta.title}</div>
-                  <div className="mt-0.5 text-[11px] text-gray-500">
-                    {meta.sectionDurationLabel}
-                  </div>
-                </div>
-              ) : (
-                <div />
               )
 
               const timestamp = formatMMSS(item.startTime)
@@ -210,18 +222,104 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                     ? { backgroundColor: 'rgba(156, 163, 175, 0.10)' }
                     : undefined
 
+              const spineRadiusClass =
+                (!isSameSectionAsPrev && !isSameSectionAsNext) || (!showSectionHeader && !isSameSectionAsPrev && !isSameSectionAsNext)
+                  ? 'rounded-[6px]'
+                  : !isSameSectionAsPrev && !showSectionHeader
+                    ? 'rounded-t-[6px]'
+                    : !isSameSectionAsNext
+                      ? 'rounded-b-[6px]'
+                      : ''
+
               return (
                 <div
                   key={item.index}
                   data-sentence-index={item.index}
-                  className={cx('group relative')}
+                  className={cx('group relative', rowGapClass)}
                 >
-                  <button
-                    type="button"
+                  {meta && showSectionHeader ? (
+                    <div
+                      className={cx(
+                        'pb-0',
+                        isRTL ? 'pl-4 pr-0' : 'pl-0 pr-4',
+                        muted ? 'opacity-40' : ''
+                      )}
+                    >
+                      <div
+                        className={cx('relative', isRTL ? 'pr-5' : 'pl-5')}
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={cx(
+                            'absolute top-0 bottom-0 w-1.5 rounded-t-[6px]',
+                            isRTL ? 'right-0' : 'left-0'
+                          )}
+                          style={{ backgroundColor: borderColor }}
+                        />
+                        <div
+                          className={cx(
+                            'grid items-stretch gap-3',
+                            isRTL ? 'grid-cols-[1fr_80px]' : 'grid-cols-[80px_1fr]'
+                          )}
+                        >
+                        {isRTL ? (
+                          <>
+                            <div className="min-w-0 h-full px-3 pt-1 pb-0">
+                              <div
+                                className={cx(
+                                  'flex items-baseline justify-end gap-2',
+                                  'flex-row-reverse text-right'
+                                )}
+                              >
+                                <div className="shrink-0 text-xs text-gray-500 text-right">
+                                  {meta.sectionDurationLabel}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate text-base font-semibold text-gray-900 text-right">
+                                    {meta.title}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-1 h-px bg-gray-100" />
+                            </div>
+                            <div className="py-3" />
+                          </>
+                        ) : (
+                          <>
+                            <div className="py-3" />
+                            <div className="min-w-0 h-full px-3 pt-1 pb-0">
+                              <div className="flex items-baseline justify-end gap-2 flex-row-reverse text-right">
+                                <div className="shrink-0 text-xs text-gray-500 text-right">
+                                  {meta.sectionDurationLabel}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="truncate text-base font-semibold text-gray-900 text-right">
+                                    {meta.title}
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="mt-1 h-px bg-gray-100" />
+                            </div>
+                          </>
+                        )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+                  <div
+                    role="button"
+                    tabIndex={0}
                     onClick={() => onSeek(item.startTime)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        onSeek(item.startTime)
+                      }
+                    }}
                     className={cx(
                       'w-full text-left',
-                      'px-4 py-3',
+                      isRTL ? 'pl-4 pr-0 py-0' : 'pl-0 pr-4 py-0',
+                      'transition-colors hover:bg-gray-50',
                       'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                       muted ? 'opacity-40' : ''
                     )}
@@ -229,97 +327,141 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                   >
                     <div
                       className={cx(
-                        'grid items-start gap-3',
-                        isRTL ? 'grid-cols-[1fr_112px_80px]' : 'grid-cols-[80px_112px_1fr]'
+                        'relative',
+                        isRTL ? 'pr-5' : 'pl-5'
                       )}
                     >
+                      <span
+                        aria-hidden="true"
+                        className={cx(
+                          'absolute top-0 bottom-0 w-1.5',
+                          spineRadiusClass,
+                          isRTL ? 'right-0' : 'left-0'
+                        )}
+                        style={{ backgroundColor: borderColor }}
+                      />
+                      <div
+                        className={cx(
+                          'grid items-stretch gap-3',
+                          isRTL ? 'grid-cols-[1fr_80px]' : 'grid-cols-[80px_1fr]'
+                        )}
+                      >
                       {isRTL ? (
                         <>
                           <div
-                            className={cx('min-w-0', borderSideClass)}
-                            style={isRTL ? { borderRightColor: borderColor } : { borderLeftColor: borderColor }}
+                            className="min-w-0 h-full px-3 py-3"
                           >
-                            <div className="px-3 py-0">
-                              <div className="text-sm text-gray-900">{item.text}</div>
+                            <div
+                              className={cx('text-sm text-gray-900', isHebrew ? 'text-right' : 'text-left')}
+                              dir={isHebrew ? 'rtl' : 'ltr'}
+                            >
+                              {item.text}
                             </div>
                           </div>
-                          <div className={cx('w-28 shrink-0', muted ? 'opacity-40' : '')}>
-                            {showSectionLabel ? marginLabel : null}
-                          </div>
-                          <div className="flex items-start justify-end text-xs text-gray-500">
-                            {timestamp}
+                          <div className="flex items-start justify-end gap-2 py-3 text-xs text-gray-500">
+                            {meta && showUp ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  moveSentenceUp(meta.sectionId, 0)
+                                }}
+                                className={[
+                                  'inline-flex h-7 w-7 items-center justify-center',
+                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
+                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
+                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                ].join(' ')}
+                                aria-label="Move section boundary up"
+                                title="Move to previous section"
+                              >
+                                ↑
+                              </button>
+                            ) : null}
+                            {meta && showDown ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
+                                }}
+                                className={[
+                                  'inline-flex h-7 w-7 items-center justify-center',
+                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
+                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
+                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                ].join(' ')}
+                                aria-label="Move section boundary down"
+                                title="Move to next section"
+                              >
+                                ↓
+                              </button>
+                            ) : null}
+                            <span className="pt-[5px]">{timestamp}</span>
                           </div>
                         </>
                       ) : (
                         <>
-                          <div className="flex items-start justify-start text-xs text-gray-500">
-                            {timestamp}
-                          </div>
-                          <div className={cx('w-28 shrink-0', muted ? 'opacity-40' : '')}>
-                            {showSectionLabel ? marginLabel : null}
+                          <div className="flex items-start justify-start gap-2 py-3 text-xs text-gray-500">
+                            <span className="pt-[5px]">{timestamp}</span>
+                            {meta && showUp ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  moveSentenceUp(meta.sectionId, 0)
+                                }}
+                                className={[
+                                  'inline-flex h-7 w-7 items-center justify-center',
+                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
+                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
+                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                ].join(' ')}
+                                aria-label="Move section boundary up"
+                                title="Move to previous section"
+                              >
+                                ↑
+                              </button>
+                            ) : null}
+                            {meta && showDown ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.preventDefault()
+                                  e.stopPropagation()
+                                  moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
+                                }}
+                                className={[
+                                  'inline-flex h-7 w-7 items-center justify-center',
+                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
+                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
+                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                ].join(' ')}
+                                aria-label="Move section boundary down"
+                                title="Move to next section"
+                              >
+                                ↓
+                              </button>
+                            ) : null}
                           </div>
                           <div
-                            className={cx('min-w-0', borderSideClass)}
-                            style={isRTL ? { borderRightColor: borderColor } : { borderLeftColor: borderColor }}
+                            className="min-w-0 h-full px-3 py-3"
                           >
-                            <div className="px-3 py-0">
-                              <div className="text-sm text-gray-900">{item.text}</div>
+                            <div
+                              className={cx('text-sm text-gray-900', isHebrew ? 'text-right' : 'text-left')}
+                              dir={isHebrew ? 'rtl' : 'ltr'}
+                            >
+                              {item.text}
                             </div>
                           </div>
                         </>
                       )}
-                    </div>
-                  </button>
-
-                  {meta ? (
-                    <div
-                      className={cx(
-                        'pointer-events-none absolute top-2',
-                        isRTL ? 'left-3' : 'right-3'
-                      )}
-                    >
-                      <div className="flex flex-col gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        {showUp ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              moveSentenceUp(meta.sectionId, 0)
-                            }}
-                            className={[
-                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center',
-                              'text-gray-400 hover:text-gray-700',
-                              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                            ].join(' ')}
-                            aria-label="Move section boundary up"
-                            title="Move to previous section"
-                          >
-                            ↑
-                          </button>
-                        ) : null}
-                        {showDown ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.preventDefault()
-                              e.stopPropagation()
-                              moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
-                            }}
-                            className={[
-                              'pointer-events-auto inline-flex h-4 w-4 items-center justify-center',
-                              'text-gray-400 hover:text-gray-700',
-                              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                            ].join(' ')}
-                            aria-label="Move section boundary down"
-                            title="Move to next section"
-                          >
-                            ↓
-                          </button>
-                        ) : null}
                       </div>
                     </div>
-                  ) : null}
+                  </div>
                 </div>
               )
             })}
