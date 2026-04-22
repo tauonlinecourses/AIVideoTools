@@ -48,6 +48,7 @@ function sectionTimeRange(section: Section): { startTime: number; endTime: numbe
 export async function exportVideo(
   videoFile: File,
   sections: Section[],
+  videoDuration: number | null | undefined,
   onProgress: (progress: number) => void, // 0 to 100
 ): Promise<Blob> {
   const enabledSections = sections.filter((s) => s.isEnabled)
@@ -55,9 +56,45 @@ export async function exportVideo(
     throw new Error('No sections enabled.')
   }
 
-  const ranges = enabledSections
-    .map(sectionTimeRange)
-    .filter((r): r is { startTime: number; endTime: number } => r != null)
+  const firstOverallId = sections[0]?.id ?? null
+  const lastOverallId = sections.length > 0 ? (sections[sections.length - 1]?.id ?? null) : null
+
+  const rawRanges = enabledSections
+    .map((s) => {
+      const range = sectionTimeRange(s)
+      if (!range) return null
+      return { sectionId: s.id, ...range }
+    })
+    .filter((r): r is { sectionId: number; startTime: number; endTime: number } => r != null)
+
+  if (rawRanges.length === 0) {
+    throw new Error('No valid enabled sections to export.')
+  }
+
+  const safeVideoDuration = Number.isFinite(videoDuration as number) && (videoDuration as number) > 0
+    ? (videoDuration as number)
+    : null
+
+  // Include intro/outro time that has no transcript cues:
+  // - Intro attaches to the first overall section if it is enabled.
+  // - Outro attaches to the last overall section if it is enabled and videoDuration is known.
+  const ranges = rawRanges.map((r, idx) => {
+    const isFirstEnabled = idx === 0
+    const isLastEnabled = idx === rawRanges.length - 1
+    let startTime = r.startTime
+    let endTime = r.endTime
+
+    if (isFirstEnabled && firstOverallId != null && r.sectionId === firstOverallId) {
+      startTime = 0
+    }
+    if (isLastEnabled && lastOverallId != null && r.sectionId === lastOverallId && safeVideoDuration != null) {
+      endTime = safeVideoDuration
+    }
+
+    // Guard against producing invalid ranges after clamping.
+    if (!Number.isFinite(startTime) || !Number.isFinite(endTime) || endTime <= startTime) return null
+    return { startTime, endTime }
+  }).filter((r): r is { startTime: number; endTime: number } => r != null)
 
   if (ranges.length === 0) {
     throw new Error('No valid enabled sections to export.')

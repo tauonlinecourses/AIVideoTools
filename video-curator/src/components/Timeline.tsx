@@ -39,7 +39,10 @@ function formatMMSSFloor(totalSeconds: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
-function sectionStartEnd(section: Section): { start: number; end: number } {
+function sectionStartEnd(
+  section: Section,
+  opts: { isFirst: boolean; isLast: boolean; videoDuration: number }
+): { start: number; end: number } {
   if (!section.items || section.items.length === 0) return { start: 0, end: 0 }
   let minStart = Number.POSITIVE_INFINITY
   let maxEnd = 0
@@ -49,12 +52,16 @@ function sectionStartEnd(section: Section): { start: number; end: number } {
     if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
   }
   if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return { start: 0, end: 0 }
-  return { start: minStart, end: maxEnd }
-}
 
-function sectionDurationSeconds(section: Section): number {
-  const { start, end } = sectionStartEnd(section)
-  return Math.max(0, end - start)
+  const safeVideoDuration =
+    Number.isFinite(opts.videoDuration) && opts.videoDuration > 0 ? opts.videoDuration : null
+
+  const start = opts.isFirst ? 0 : minStart
+  const end = opts.isLast && safeVideoDuration != null ? safeVideoDuration : maxEnd
+
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { start: 0, end: 0 }
+  if (end <= start) return { start: 0, end: 0 }
+  return { start, end }
 }
 
 export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
@@ -71,10 +78,21 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     if (sections.length === 0) {
       return { blocks: [] as SectionBlock[], totalDuration: videoDuration }
     }
-    const durations = sections.map(sectionDurationSeconds)
+    const durations = sections.map((s, idx) => {
+      const { start, end } = sectionStartEnd(s, {
+        isFirst: idx === 0,
+        isLast: idx === sections.length - 1,
+        videoDuration,
+      })
+      return Math.max(0, end - start)
+    })
     const total = durations.reduce((acc, d) => acc + d, 0)
-    const blocks: SectionBlock[] = sections.map((s) => {
-      const { start, end } = sectionStartEnd(s)
+    const blocks: SectionBlock[] = sections.map((s, idx) => {
+      const { start, end } = sectionStartEnd(s, {
+        isFirst: idx === 0,
+        isLast: idx === sections.length - 1,
+        videoDuration,
+      })
       const duration = Math.max(0, end - start)
       const widthPct = total > 0 ? (duration / total) * 100 : 0
       return {
@@ -261,7 +279,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
       >
         <div
           className={[
-            'absolute left-1/2 -translate-x-1/2 -ml-[0.4px]',
+            'absolute left-1/2 -translate-x-1/2 -ml-[0.1px]',
             '-top-[7px]',
             'w-0 h-0',
             'border-l-[6px] border-l-transparent',

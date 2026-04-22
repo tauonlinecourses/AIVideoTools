@@ -38,7 +38,10 @@ function formatMMSSFloor(totalSeconds: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
-function sectionDurationSeconds(section: Section): number {
+function sectionDurationSeconds(
+  section: Section,
+  opts: { isFirst: boolean; isLast: boolean; videoDuration: number }
+): number {
   if (!section.items || section.items.length === 0) return 0
   let minStart = Number.POSITIVE_INFINITY
   let maxEnd = 0
@@ -48,7 +51,13 @@ function sectionDurationSeconds(section: Section): number {
     if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
   }
   if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return 0
-  return Math.max(0, maxEnd - minStart)
+
+  const safeVideoDuration =
+    Number.isFinite(opts.videoDuration) && opts.videoDuration > 0 ? opts.videoDuration : null
+
+  const start = opts.isFirst ? 0 : minStart
+  const end = opts.isLast && safeVideoDuration != null ? safeVideoDuration : maxEnd
+  return Math.max(0, end - start)
 }
 
 type SentenceMeta = {
@@ -85,7 +94,9 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
     const srtItems = useStore(s => s.srtItems)
     const isRTL = useStore(s => s.isRTL)
     const sections = useStore(s => s.sections)
+    const videoDuration = useStore(s => s.videoDuration)
     const currentTime = useStore(s => s.currentTime)
+    const toggleSection = useStore(s => s.toggleSection)
     const moveSentenceUp = useStore(s => s.moveSentenceUp)
     const moveSentenceDown = useStore(s => s.moveSentenceDown)
 
@@ -101,7 +112,11 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
       for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
         const section = sections[sectionIndex]
-        const durationLabel = formatMMSSFloor(sectionDurationSeconds(section))
+        const durationLabel = formatMMSSFloor(sectionDurationSeconds(section, {
+          isFirst: sectionIndex === 0,
+          isLast: sectionIndex === sections.length - 1,
+          videoDuration,
+        }))
 
         for (let posInSection = 0; posInSection < section.items.length; posInSection++) {
           const item = section.items[posInSection]
@@ -122,7 +137,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
       }
 
       return map
-    }, [sections])
+    }, [sections, videoDuration])
 
     const scrollToSentence = useCallback((index: number) => {
       const container = scrollContainerRef.current
@@ -267,17 +282,97 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                             <div className="min-w-0 h-full px-3 pt-1 pb-0">
                               <div
                                 className={cx(
-                                  'flex items-baseline justify-end gap-2',
-                                  'flex-row-reverse text-right'
+                                  'flex items-center gap-2 text-right',
+                                  // In RTL, "end" is the left side; use start to keep the header anchored to the right edge.
+                                  isRTL ? 'justify-start' : 'justify-end'
                                 )}
                               >
-                                <div className="shrink-0 text-xs text-gray-500 text-right">
-                                  {meta.sectionDurationLabel}
-                                </div>
                                 <div className="min-w-0">
                                   <div className="truncate text-base font-semibold text-gray-900 text-right">
                                     {meta.title}
                                   </div>
+                                </div>
+                                <div className="shrink-0 inline-flex items-center gap-1 text-xs text-gray-500" dir="ltr">
+                                  <button
+                                    type="button"
+                                    className={[
+                                      'inline-flex h-7 w-7 items-center justify-center',
+                                      'bg-transparent text-gray-900',
+                                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                    ].join(' ')}
+                                    aria-label={meta.isEnabled ? 'Hide section from video' : 'Show section in video'}
+                                    title={meta.isEnabled ? 'Disable section' : 'Enable section'}
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      toggleSection(meta.sectionId)
+                                    }}
+                                  >
+                                    {meta.isEnabled ? (
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    ) : (
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M9.88 5.09A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.3 4.38"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M6.61 6.61A18.2 18.2 0 0 0 2 12s3.5 7 10 7c1.25 0 2.42-.2 3.5-.55"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M2 2l20 20"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <span className="text-right">{meta.sectionDurationLabel}</span>
                                 </div>
                               </div>
                               <div className="mt-1 h-px bg-gray-100" />
@@ -288,9 +383,88 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                           <>
                             <div className="py-3" />
                             <div className="min-w-0 h-full px-3 pt-1 pb-0">
-                              <div className="flex items-baseline justify-end gap-2 flex-row-reverse text-right">
-                                <div className="shrink-0 text-xs text-gray-500 text-right">
-                                  {meta.sectionDurationLabel}
+                              <div className="flex items-center justify-end gap-2 text-right">
+                                <div className="shrink-0 inline-flex items-center gap-1 text-xs text-gray-500" dir="ltr">
+                                  <button
+                                    type="button"
+                                    className={[
+                                      'inline-flex h-7 w-7 items-center justify-center',
+                                      'bg-transparent text-gray-900',
+                                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                                    ].join(' ')}
+                                    aria-label={meta.isEnabled ? 'Hide section from video' : 'Show section in video'}
+                                    title={meta.isEnabled ? 'Disable section' : 'Enable section'}
+                                    onClick={(e) => {
+                                      e.preventDefault()
+                                      e.stopPropagation()
+                                      toggleSection(meta.sectionId)
+                                    }}
+                                  >
+                                    {meta.isEnabled ? (
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    ) : (
+                                      <svg
+                                        width="18"
+                                        height="18"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                        aria-hidden="true"
+                                      >
+                                        <path
+                                          d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M9.88 5.09A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.3 4.38"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M6.61 6.61A18.2 18.2 0 0 0 2 12s3.5 7 10 7c1.25 0 2.42-.2 3.5-.55"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                        <path
+                                          d="M2 2l20 20"
+                                          stroke="currentColor"
+                                          strokeWidth="2"
+                                          strokeLinecap="round"
+                                          strokeLinejoin="round"
+                                        />
+                                      </svg>
+                                    )}
+                                  </button>
+                                  <span className="text-right">{meta.sectionDurationLabel}</span>
                                 </div>
                                 <div className="min-w-0">
                                   <div className="truncate text-base font-semibold text-gray-900 text-right">

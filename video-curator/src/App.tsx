@@ -39,7 +39,7 @@ function App() {
         </main>
 
         <div className="w-[35%]">
-          <RightPanel />
+          <RightPanel onSeek={handleSeek} />
         </div>
       </div>
     </div>

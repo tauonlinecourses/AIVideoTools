@@ -128,15 +128,21 @@ Path: `video-curator/src/components/SectionManager.tsx`
 
 Responsibilities:
 - Lists `store.sections`
+- Renders sections as a **vertical timeline**:
+  - The sections list fills the available height.
+  - Each section block height is proportional to its section duration (computed from transcript item times), so the full stack represents 100% of the total sections duration (like `Timeline` widths).
+- Interaction:
+  - Clicking a section **title** seeks the video to that section’s start time (same behavior as clicking a sentence row in `TranscriptPane`).
 - Row contents:
-  - color swatch (from `section.color`)
-  - section title
-  - duration in `MM:SS`
-  - enable/disable toggle calling `toggleSection(section.id)`
-  - disabled sections are muted and struck through
+  - a vertical colored spine line on the **right edge** (from `section.color`)
+  - section title (right-aligned; double-click to rename per Phase 7)
+  - section duration (`MM:SS`)
+  - enable/disable as an **eye icon** button calling `toggleSection(section.id)`
+  - layout order (right → left): **Title, Duration, Eye**
+  - disabled sections are muted and struck through (title), and the spine is also muted
 - Bottom:
-  - `Download Video` button (exports curated video)
-  - `Download Transcript` button (exports curated transcript)
+  - `Download Video` button (exports curated video, with a left download icon)
+  - `Download Transcript` button (exports curated transcript, with a left download icon)
 
 Export behavior:
 - **Disable rules (both buttons)**:
@@ -160,7 +166,12 @@ Export behavior:
   - Uses **ffmpeg.wasm** and is **lazy-loaded** on first export click (never on app startup)
   - Implementation: `video-curator/src/lib/exportVideo.ts`
   - Pipeline:
-    - For each enabled section, derive `startTime` from the first item and `endTime` from the last item
+    - For each enabled section, derive `startTime`/`endTime` from transcript cue times:
+      - Default: `startTime = firstItem.startTime`, `endTime = lastItem.endTime`
+      - **Intro/outro padding** (prevents cutting silent parts that have no transcript cues):
+        - If the **first section overall** is enabled, its `startTime` is clamped to `0`
+        - If the **last section overall** is enabled and `store.videoDuration` is known/positive, its `endTime` is clamped to `videoDuration`
+        - If `videoDuration` is unknown, the outro falls back to the last subtitle `endTime` (no padding)
     - Create `segment_i.mp4` files by **re-encoding** (H.264/AAC) to guarantee clean cuts that start with a decodable video frame
       - Rationale: stream copy can start on a non-keyframe → audio starts immediately but video may stay black until the next keyframe
     - Concatenate segments using the concat demuxer (`concat.txt` → `output.mp4`)
@@ -240,6 +251,7 @@ Responsibilities:
 - Section header (title row):
   - When a new section starts (i.e., the current sentence is the first sentence of a section), a **section header row** is inserted **above** that section’s first sentence.
   - The header shows:
+    - an eye icon toggle button (enable/disable the section) to the left of the section duration
     - section duration (`MM:SS`) on the left
     - `{section.title}` (truncated if needed) on the right
   - Layout note:
@@ -289,8 +301,8 @@ Layout:
 
 Section blocks:
 - Section duration is computed from section transcript items:
-  - `start = min(items[].startTime)`
-  - `end = max(items[].endTime)`
+  - `start = min(items[].startTime)` (except the **first section**, which uses `0` to include intro padding)
+  - `end = max(items[].endTime)` (except the **last section**, which uses `store.videoDuration` when known/positive to include outro padding)
   - `durationSeconds = max(0, end - start)`
 - Total duration:
   - `totalDuration = sum(sectionDurationSeconds)`
@@ -422,15 +434,13 @@ Phase 7 wires up the section editing interactions across `TranscriptPane` and `S
 Path: `video-curator/src/components/SectionManager.tsx`
 
 Enable/disable toggle:
-- Implemented as an accessible checkbox switch:
-  - A visually hidden `<input type="checkbox">` is the real control.
-  - A styled `<label>` renders the switch track/thumb.
+- Implemented as an icon-only **eye button** (open/closed eye) to match `TranscriptPane` section headers.
 - Behavior:
   - Toggling calls `toggleSection(section.id)`
 - Disabled visuals (`isEnabled === false`):
   - Title: muted + line-through
-  - Color swatch: 40% opacity
-  - Duration text: muted
+  - Right-edge color spine: ~40% opacity
+  - Duration label: muted
 
 Inline title editing:
 - Default: title renders as plain text.

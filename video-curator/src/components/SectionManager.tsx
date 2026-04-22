@@ -11,16 +11,42 @@ function formatMMSS(totalSeconds: number): string {
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
-function sectionDurationSeconds(section: Section): number {
-  const first = section.items[0]
-  const last = section.items[section.items.length - 1]
-  if (!first || !last) return 0
-  return Math.max(0, last.endTime - first.startTime)
+function cx(...parts: Array<string | false | null | undefined>) {
+  return parts.filter(Boolean).join(' ')
 }
 
-export function SectionManager() {
+function sectionDurationSeconds(section: Section): number {
+  if (!section.items || section.items.length === 0) return 0
+  let minStart = Number.POSITIVE_INFINITY
+  let maxEnd = 0
+  for (const it of section.items) {
+    if (!it) continue
+    if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+    if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
+  }
+  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return 0
+  return Math.max(0, maxEnd - minStart)
+}
+
+function sectionStartTimeSeconds(section: Section): number | null {
+  if (!section.items || section.items.length === 0) return null
+  let minStart = Number.POSITIVE_INFINITY
+  for (const it of section.items) {
+    if (!it) continue
+    if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+  }
+  if (!Number.isFinite(minStart)) return null
+  return minStart
+}
+
+export interface SectionManagerProps {
+  onSeek: (time: number) => void
+}
+
+export function SectionManager({ onSeek }: SectionManagerProps) {
   const sections = useStore(s => s.sections)
   const videoFile = useStore(s => s.videoFile)
+  const videoDuration = useStore(s => s.videoDuration)
   const toggleSection = useStore(s => s.toggleSection)
   const renameSection = useStore(s => s.renameSection)
 
@@ -45,11 +71,79 @@ export function SectionManager() {
 
   const durations = useMemo(() => {
     const map = new Map<number, string>()
-    for (const s of sections) {
-      map.set(s.id, formatMMSS(sectionDurationSeconds(s)))
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i]
+      const isFirst = i === 0
+      const isLast = i === sections.length - 1
+      const safeVideoDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : null
+
+      if (!s.items || s.items.length === 0) {
+        map.set(s.id, '00:00')
+        continue
+      }
+
+      let minStart = Number.POSITIVE_INFINITY
+      let maxEnd = 0
+      for (const it of s.items) {
+        if (!it) continue
+        if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+        if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
+      }
+      if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
+        map.set(s.id, '00:00')
+        continue
+      }
+
+      const start = isFirst ? 0 : minStart
+      const end = isLast && safeVideoDuration != null ? safeVideoDuration : maxEnd
+      map.set(s.id, formatMMSS(Math.max(0, end - start)))
     }
     return map
-  }, [sections])
+  }, [sections, videoDuration])
+
+  const durationWeights = useMemo(() => {
+    const secondsById = new Map<number, number>()
+    let total = 0
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i]
+      const isFirst = i === 0
+      const isLast = i === sections.length - 1
+      const safeVideoDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : null
+
+      if (!s.items || s.items.length === 0) {
+        secondsById.set(s.id, 0)
+        continue
+      }
+
+      let minStart = Number.POSITIVE_INFINITY
+      let maxEnd = 0
+      for (const it of s.items) {
+        if (!it) continue
+        if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
+        if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
+      }
+      if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) {
+        secondsById.set(s.id, 0)
+        continue
+      }
+
+      const start = isFirst ? 0 : minStart
+      const end = isLast && safeVideoDuration != null ? safeVideoDuration : maxEnd
+      const d = Math.max(0, end - start)
+      const safe = Number.isFinite(d) && d > 0 ? d : 0
+      secondsById.set(s.id, safe)
+      total += safe
+    }
+
+    // Fallback: if everything is 0 (or missing), render equal heights.
+    const useEqual = !Number.isFinite(total) || total <= 0
+    const weightById = new Map<number, number>()
+    for (const s of sections) {
+      const w = useEqual ? 1 : (secondsById.get(s.id) ?? 0)
+      weightById.set(s.id, Math.max(0, w))
+    }
+    return weightById
+  }, [sections, videoDuration])
 
   const enabledSectionsCount = useMemo(() => sections.filter(s => s.isEnabled).length, [sections])
   const hasEnabledSections = enabledSectionsCount > 0
@@ -65,14 +159,50 @@ export function SectionManager() {
     URL.revokeObjectURL(url)
   }
 
+  const DownloadIcon = ({ className }: { className?: string }) => (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M12 3v10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 11l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 21h16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-auto">
-        <div className="space-y-2">
-          {sections.map((section) => {
+      <div className="flex-1 overflow-hidden">
+        <div className="flex h-full flex-col">
+          {sections.map((section, idx) => {
             const muted = !section.isEnabled
             const isEditing = editingSectionId === section.id
-            const switchId = `section-toggle-${section.id}`
+            const durationLabel = durations.get(section.id) ?? '00:00'
+            const heightWeight = durationWeights.get(section.id) ?? 0
+            const startTime = idx === 0 ? 0 : sectionStartTimeSeconds(section)
 
             const commitRename = () => {
               if (!isEditing) return
@@ -96,97 +226,161 @@ export function SectionManager() {
             return (
               <div
                 key={section.id}
-                className={[
-                  'flex items-center gap-3 border px-3 py-2',
-                  muted ? 'border-gray-200 bg-gray-50' : 'border-gray-200 bg-white',
-                ].join(' ')}
+                className={cx(
+                  'group relative px-3 py-2 overflow-hidden',
+                  muted ? 'bg-gray-50' : 'bg-white'
+                )}
+                style={{ flexGrow: heightWeight, flexBasis: 0 }}
               >
                 <span
-                  className={['h-3 w-3 shrink-0', muted ? 'opacity-40' : ''].join(' ')}
-                  style={{ backgroundColor: section.color }}
                   aria-hidden="true"
+                  className={cx('absolute top-0 bottom-0 right-0 w-1.5', muted ? 'opacity-40' : '')}
+                  style={{ backgroundColor: section.color }}
                 />
 
-                <div className="min-w-0 flex-1">
-                  {isEditing ? (
-                    <input
-                      ref={inputRef}
-                      value={draftTitle}
-                      onChange={(e) => setDraftTitle(e.target.value)}
-                      onBlur={commitRename}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          commitRename()
-                        } else if (e.key === 'Escape') {
-                          e.preventDefault()
-                          cancelRename()
-                        }
-                      }}
-                      className={[
-                        'w-full border border-gray-300 bg-white px-2 py-1',
-                        'text-sm font-semibold text-gray-900',
-                        'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                      ].join(' ')}
-                      aria-label="Edit section title"
-                    />
-                  ) : (
-                    <div
-                      className={[
-                        'truncate text-sm font-semibold',
-                        muted ? 'text-gray-500 line-through' : 'text-gray-900',
-                      ].join(' ')}
-                      onDoubleClick={() => {
-                        setEditingSectionId(section.id)
-                        setDraftTitle(section.title)
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'Enter' && e.key !== ' ') return
-                        e.preventDefault()
-                        setEditingSectionId(section.id)
-                        setDraftTitle(section.title)
-                      }}
-                      aria-label="Rename section"
-                      title="Double-click to rename"
-                    >
-                      {section.title}
-                    </div>
-                  )}
-
-                  <div className={['mt-0.5 text-xs', muted ? 'text-gray-400' : 'text-gray-600'].join(' ')}>
-                    Duration: {durations.get(section.id) ?? '00:00'}
-                  </div>
-                </div>
-
-                <div className="shrink-0">
-                  <input
-                    id={switchId}
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={section.isEnabled}
-                    onChange={() => toggleSection(section.id)}
-                    aria-label={section.isEnabled ? 'Disable section' : 'Enable section'}
-                  />
-                  <label
-                    htmlFor={switchId}
-                    className={[
-                      'relative inline-flex h-6 w-11 cursor-pointer items-center border transition-colors',
-                      'focus-within:outline-none focus-within:ring-2 focus-within:ring-black focus-within:ring-offset-2',
-                      'peer-checked:border-black peer-checked:bg-black',
-                      'border-gray-300 bg-white',
-                    ].join(' ')}
+                <div className="flex items-center justify-end gap-2 pr-3">
+                  <button
+                    type="button"
+                    className={cx(
+                      'inline-flex h-7 w-7 items-center justify-center',
+                      'bg-transparent text-gray-900',
+                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2'
+                    )}
+                    aria-label={section.isEnabled ? 'Hide section from video' : 'Show section in video'}
+                    title={section.isEnabled ? 'Disable section' : 'Enable section'}
+                    onClick={(e) => {
+                      e.preventDefault()
+                      e.stopPropagation()
+                      toggleSection(section.id)
+                    }}
                   >
-                    <span
-                      className={[
-                        'inline-block h-5 w-5 transform bg-white transition-transform',
-                        'translate-x-0.5 border border-gray-300',
-                        'peer-checked:translate-x-5 peer-checked:border-white',
-                      ].join(' ')}
-                      aria-hidden="true"
-                    />
-                  </label>
+                    {section.isEnabled ? (
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    ) : (
+                      <svg
+                        width="18"
+                        height="18"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M9.88 5.09A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.3 4.38"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M6.61 6.61A18.2 18.2 0 0 0 2 12s3.5 7 10 7c1.25 0 2.42-.2 3.5-.55"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                        <path
+                          d="M2 2l20 20"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                    )}
+                  </button>
+
+                  <span
+                    className={cx('shrink-0 text-xs tabular-nums', muted ? 'text-gray-400' : 'text-gray-500')}
+                    dir="ltr"
+                  >
+                    {durationLabel}
+                  </span>
+
+                  <div className="min-w-0">
+                    {isEditing ? (
+                      <input
+                        ref={inputRef}
+                        value={draftTitle}
+                        onChange={(e) => setDraftTitle(e.target.value)}
+                        onBlur={commitRename}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            commitRename()
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault()
+                            cancelRename()
+                          }
+                        }}
+                        className={cx(
+                          'w-full border border-gray-300 bg-white px-2 py-1',
+                          'text-sm font-semibold text-gray-900 text-right',
+                          'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2'
+                        )}
+                        aria-label="Edit section title"
+                      />
+                    ) : (
+                      <div>
+                        <div
+                          className={cx(
+                            'truncate text-sm font-semibold text-right',
+                            muted ? 'text-gray-500 line-through' : 'text-gray-900'
+                          )}
+                          onClick={() => {
+                            if (startTime == null) return
+                            onSeek(startTime)
+                          }}
+                          onDoubleClick={() => {
+                            setEditingSectionId(section.id)
+                            setDraftTitle(section.title)
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key !== 'Enter' && e.key !== ' ') return
+                            e.preventDefault()
+                            setEditingSectionId(section.id)
+                            setDraftTitle(section.title)
+                          }}
+                          aria-label="Rename section"
+                          title="Double-click to rename"
+                        >
+                          {section.title}
+                        </div>
+                        <div className="mt-0.5 h-[2px] bg-gray-200" aria-hidden="true" />
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )
@@ -204,7 +398,7 @@ export function SectionManager() {
             setExportProgress(0)
             setExportError(null)
             try {
-              const blob = await exportVideo(videoFile, sections, setExportProgress)
+              const blob = await exportVideo(videoFile, sections, videoDuration, setExportProgress)
               downloadBlob(blob, 'curated-video.mp4')
             } catch (err) {
               const message = err instanceof Error ? err.message : 'Export failed. Please try again.'
@@ -225,13 +419,14 @@ export function SectionManager() {
                     : undefined
           }
           className={[
-            'border px-3 py-2 text-sm font-semibold',
+            'inline-flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold',
             disableExports || videoFile == null
               ? 'border-gray-200 bg-gray-50 text-gray-500'
               : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
           ].join(' ')}
         >
-          Download Video
+          <DownloadIcon className="shrink-0" />
+          <span>Download Video</span>
         </button>
         <button
           type="button"
@@ -252,11 +447,12 @@ export function SectionManager() {
                   : undefined
           }
           className={[
-            'border px-3 py-2 text-sm font-semibold',
+            'inline-flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold',
             disableExports ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
           ].join(' ')}
         >
-          Download Transcript
+          <DownloadIcon className="shrink-0" />
+          <span>Download Transcript</span>
         </button>
       </div>
 

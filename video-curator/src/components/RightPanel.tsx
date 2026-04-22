@@ -12,7 +12,11 @@ function Spinner() {
   )
 }
 
-export function RightPanel() {
+export interface RightPanelProps {
+  onSeek: (time: number) => void
+}
+
+export function RightPanel({ onSeek }: RightPanelProps) {
   const videoFile = useStore(s => s.videoFile)
   const srtItemsCount = useStore(s => s.srtItems.length)
   const sectionsCount = useStore(s => s.sections.length)
@@ -139,7 +143,7 @@ export function RightPanel() {
           ) : null}
 
           <div className="mt-4 flex-1">
-            <SectionManager />
+            <SectionManager onSeek={onSeek} />
           </div>
         </div>
       )}
