@@ -8,6 +8,7 @@ type TitleLanguage = 'en' | 'he'
 interface GptSection {
   id: number
   title: string
+  description: string
   startIndex: number
   endIndex: number
 }
@@ -28,9 +29,21 @@ function buildPrompt(transcriptText: string, totalItems: number, titleLanguage: 
     titleLanguage === 'he'
       ? 'Give each section a short, clear Hebrew title (3-6 words) that describes the topic'
       : 'Give each section a short, clear English title (3-6 words) that describes the topic'
+  const descriptionRule =
+    titleLanguage === 'he'
+      ? 'Give each section a 1-2 sentence Hebrew description summarizing what is discussed in that section. Keep it short and editor-friendly.'
+      : 'Give each section a 1-2 sentence English description summarizing what is discussed in that section. Keep it short and editor-friendly.'
 
   const exampleTitle1 = titleLanguage === 'he' ? 'מבוא וסקירה' : 'Introduction and Overview'
   const exampleTitle2 = titleLanguage === 'he' ? 'הסבר הרעיון המרכזי' : 'Core Concept Explained'
+  const exampleDesc1 =
+    titleLanguage === 'he'
+      ? 'הסבר קצר על מה הולך להיות בסרטון ולמה זה חשוב.'
+      : 'A brief setup of what the video will cover and why it matters.'
+  const exampleDesc2 =
+    titleLanguage === 'he'
+      ? 'פירוק הרעיון המרכזי לצעדים פשוטים עם דוגמה.'
+      : 'Breaks down the core idea into simple steps with an example.'
 
   return `You are an expert educational content editor. Your job is to analyze a video transcript and group its sentences into logical, meaningful sections based on topic changes.
 
@@ -48,6 +61,7 @@ INSTRUCTIONS:
 - CRITICAL: Across sections, ranges must be back-to-back and in order (if one ends at k, next starts at k+1)
 - Section titles must be in ${titleLanguageLabel}
 - ${titleRule}
+- ${descriptionRule}
 - SELF-CHECK BEFORE RETURNING JSON:
   - The first section must startIndex=0.
   - For each adjacent pair: next.startIndex must equal prev.endIndex+1.
@@ -61,12 +75,14 @@ REQUIRED JSON FORMAT:
     {
       "id": 1,
       "title": "${exampleTitle1}",
+      "description": "${exampleDesc1}",
       "startIndex": 0,
       "endIndex": 3
     },
     {
       "id": 2,
       "title": "${exampleTitle2}",
+      "description": "${exampleDesc2}",
       "startIndex": 4,
       "endIndex": 8
     }
@@ -94,6 +110,9 @@ function validateResponse(data: GptResponse, totalItems: number): string | null 
   for (const section of data.sections) {
     if (!section.title || typeof section.title !== 'string') {
       return 'Section missing title'
+    }
+    if (!section.description || typeof section.description !== 'string') {
+      return 'Section missing description'
     }
     if (!Number.isFinite(section.startIndex) || !Number.isFinite(section.endIndex)) return 'Section missing startIndex/endIndex'
     if (section.startIndex < 0 || section.endIndex < 0) return 'Section has negative index'
@@ -128,16 +147,19 @@ function repairPartialResponse(
     return { repaired: { sections: [] }, wasRepaired: false }
   }
 
-  // Build a per-index owner title map. First writer wins, ignore out-of-range indices.
+  // Build a per-index owner maps. First writer wins, ignore out-of-range indices.
   const ownerTitle: Array<string | null> = Array.from({ length: totalItems }, () => null)
+  const ownerDescription: Array<string | null> = Array.from({ length: totalItems }, () => null)
   for (const section of data.sections) {
     if (!section || typeof section.title !== 'string') continue
+    const desc = typeof section.description === 'string' ? section.description : ''
     const start = Math.trunc(Number(section.startIndex))
     const end = Math.trunc(Number(section.endIndex))
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue
     for (let idx = start; idx <= end; idx++) {
       if (idx < 0 || idx >= totalItems) continue
       if (ownerTitle[idx] === null) ownerTitle[idx] = section.title
+      if (ownerDescription[idx] === null) ownerDescription[idx] = desc
     }
   }
 
@@ -163,25 +185,39 @@ function repairPartialResponse(
     return unassignedBlock === 1 ? base : `${base} (${unassignedBlock})`
   }
 
+  const descriptionFor = (d: string | null) => {
+    if (d && d.trim().length > 0) return d.trim()
+    return titleLanguage === 'he'
+      ? 'קטע שלא שויך אוטומטית לסעיף.'
+      : 'A segment that was not automatically assigned to a section.'
+  }
+
   let i = 0
   while (i < totalItems) {
     const runTitle = titleFor(ownerTitle[i])
+    const runDesc = descriptionFor(ownerDescription[i])
     const runStart = i
     i += 1
 
     while (i < totalItems) {
       const t = ownerTitle[i]
+      const d = ownerDescription[i]
       // Keep same run if same title OR both unassigned (null).
       const same =
         (t === null && runTitle.startsWith('Unassigned')) ||
         (t !== null && t === runTitle)
       if (!same) break
+
+      // If title matches but description differs, split to avoid mixing descriptions.
+      const nextDesc = descriptionFor(d)
+      if (nextDesc !== runDesc) break
       i += 1
     }
 
     repairedSections.push({
       id: nextId++,
       title: runTitle,
+      description: runDesc,
       startIndex: runStart,
       endIndex: i - 1,
     })
@@ -201,6 +237,7 @@ function buildEqualChunkFallback(items: SrtItem[], titleLanguage: TitleLanguage)
   const raw = Array.from({ length: CHUNK_COUNT }, (_, i) => ({
     id: i + 1,
     title: labels[i] ?? `Part ${i + 1}`,
+    description: '',
     isEnabled: true,
     items: items.slice(i * chunkSize, (i + 1) * chunkSize),
   })).filter(s => s.items.length > 0)
@@ -281,6 +318,7 @@ export async function segmentTranscript(
           // Keep ids stable-ish even if the model gave weird ids.
           id: Number.isFinite(s.id) ? s.id : idx + 1,
           title: s.title,
+          description: typeof s.description === 'string' ? s.description : '',
           isEnabled: true,
           items: items.slice(start, end + 1),
         }

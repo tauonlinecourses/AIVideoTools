@@ -238,149 +238,175 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
                   style={{ backgroundColor: section.color }}
                 />
 
-                <div className="flex items-center justify-end gap-2 pr-3">
-                  <button
-                    type="button"
-                    className={cx(
-                      'inline-flex h-7 w-7 items-center justify-center',
-                      'bg-transparent text-gray-900',
-                      'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2'
-                    )}
-                    aria-label={section.isEnabled ? 'Hide section from video' : 'Show section in video'}
-                    title={section.isEnabled ? 'Disable section' : 'Enable section'}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      toggleSection(section.id)
-                    }}
-                  >
-                    {section.isEnabled ? (
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    ) : (
-                      <svg
-                        width="18"
-                        height="18"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        xmlns="http://www.w3.org/2000/svg"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M9.88 5.09A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.3 4.38"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M6.61 6.61A18.2 18.2 0 0 0 2 12s3.5 7 10 7c1.25 0 2.42-.2 3.5-.55"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                        <path
-                          d="M2 2l20 20"
-                          stroke="currentColor"
-                          strokeWidth="2"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                    )}
-                  </button>
-
-                  <span
-                    className={cx('shrink-0 text-xs tabular-nums', muted ? 'text-gray-400' : 'text-gray-500')}
-                    dir="ltr"
-                  >
-                    {durationLabel}
-                  </span>
-
-                  <div className="min-w-0">
-                    {isEditing ? (
-                      <input
-                        ref={inputRef}
-                        value={draftTitle}
-                        onChange={(e) => setDraftTitle(e.target.value)}
-                        onBlur={commitRename}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault()
-                            commitRename()
-                          } else if (e.key === 'Escape') {
-                            e.preventDefault()
-                            cancelRename()
-                          }
-                        }}
+                <div className="pr-3">
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="min-w-0 flex shrink items-center justify-end gap-2">
+                      <button
+                        type="button"
                         className={cx(
-                          'w-full border border-gray-300 bg-white px-2 py-1',
-                          'text-sm font-semibold text-gray-900 text-right',
+                          'inline-flex h-7 w-7 items-center justify-center',
+                          'bg-transparent text-gray-900',
                           'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2'
                         )}
-                        aria-label="Edit section title"
-                      />
-                    ) : (
-                      <div>
+                        aria-label={section.isEnabled ? 'Hide section from video' : 'Show section in video'}
+                        title={section.isEnabled ? 'Disable section' : 'Enable section'}
+                        onClick={(e) => {
+                          e.preventDefault()
+                          e.stopPropagation()
+                          toggleSection(section.id)
+                        }}
+                      >
+                        {section.isEnabled ? (
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        ) : (
+                          <svg
+                            width="18"
+                            height="18"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            xmlns="http://www.w3.org/2000/svg"
+                            aria-hidden="true"
+                          >
+                            <path
+                              d="M10.58 10.58A2 2 0 0 0 12 14a2 2 0 0 0 1.42-.58"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M9.88 5.09A10.43 10.43 0 0 1 12 5c6.5 0 10 7 10 7a18.5 18.5 0 0 1-3.3 4.38"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M6.61 6.61A18.2 18.2 0 0 0 2 12s3.5 7 10 7c1.25 0 2.42-.2 3.5-.55"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                            <path
+                              d="M2 2l20 20"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </button>
+
+                      <span
+                        className={cx('shrink-0 text-xs tabular-nums', muted ? 'text-gray-400' : 'text-gray-500')}
+                        dir="ltr"
+                      >
+                        {durationLabel}
+                      </span>
+
+                      <div className="min-w-0 shrink">
+                        {isEditing ? (
+                          <input
+                            ref={inputRef}
+                            value={draftTitle}
+                            onChange={(e) => setDraftTitle(e.target.value)}
+                            onBlur={commitRename}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault()
+                                commitRename()
+                              } else if (e.key === 'Escape') {
+                                e.preventDefault()
+                                cancelRename()
+                              }
+                            }}
+                            className={cx(
+                              'w-full border border-gray-300 bg-white px-2 py-1',
+                              'text-sm font-semibold text-gray-900 text-right',
+                              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2'
+                            )}
+                            aria-label="Edit section title"
+                          />
+                        ) : (
+                          <div
+                            className={cx(
+                              'truncate text-sm font-semibold text-right',
+                              muted ? 'text-gray-500 line-through' : 'text-gray-900'
+                            )}
+                            onClick={() => {
+                              if (startTime == null) return
+                              onSeek(startTime)
+                            }}
+                            onDoubleClick={() => {
+                              setEditingSectionId(section.id)
+                              setDraftTitle(section.title)
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key !== 'Enter' && e.key !== ' ') return
+                              e.preventDefault()
+                              setEditingSectionId(section.id)
+                              setDraftTitle(section.title)
+                            }}
+                            aria-label="Rename section"
+                            title="Double-click to rename"
+                          >
+                            {section.title}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {isEditing ? null : (
+                    <>
+                      <div className="mt-0.5 h-[2px] bg-gray-200" aria-hidden="true" />
+                      {section.description ? (
                         <div
                           className={cx(
-                            'truncate text-sm font-semibold text-right',
-                            muted ? 'text-gray-500 line-through' : 'text-gray-900'
+                            'mt-1 text-xs text-right',
+                            muted ? 'text-gray-400' : 'text-gray-600'
                           )}
-                          onClick={() => {
-                            if (startTime == null) return
-                            onSeek(startTime)
+                          dir="rtl"
+                          style={{
+                            display: '-webkit-box',
+                            WebkitLineClamp: 2,
+                            WebkitBoxOrient: 'vertical',
+                            overflow: 'hidden',
+                            direction: 'rtl',
                           }}
-                          onDoubleClick={() => {
-                            setEditingSectionId(section.id)
-                            setDraftTitle(section.title)
-                          }}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key !== 'Enter' && e.key !== ' ') return
-                            e.preventDefault()
-                            setEditingSectionId(section.id)
-                            setDraftTitle(section.title)
-                          }}
-                          aria-label="Rename section"
-                          title="Double-click to rename"
+                          title={section.description}
                         >
-                          {section.title}
+                          {section.description}
                         </div>
-                        <div className="mt-0.5 h-[2px] bg-gray-200" aria-hidden="true" />
-                      </div>
-                    )}
-                  </div>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               </div>
             )

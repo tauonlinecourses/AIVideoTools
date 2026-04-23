@@ -32,6 +32,7 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
   - The client validates these invariants on receipt.
 - **Prompt hardening**: the client prompt explicitly requires contiguous ranges, a self-check (concatenation must equal `0..N-1`), and an escape hatch to return `{ "sections": [] }` if the model cannot comply.
 - **Prompt format**: the model returns **range boundaries** (`startIndex`, `endIndex`, inclusive) per section (not per-sentence index lists) so the client can enforce contiguity by construction.
+- **Section descriptions**: the model also returns a short 1–2 sentence `description` per section (same language as the transcript) to help editors quickly understand what’s discussed in each section.
 - **Retry then fallback**: if validation fails, the client retries once with an even stricter addendum; if it still fails, it falls back to equal-sized chunks.
 - **Partial AI output handling**: if the model returns sections that don’t cover every sentence index, the client attempts to **repair** the output by filling missing index ranges into one or more “Unassigned” sections (instead of falling back to equal-sized chunks immediately).
 - **Section title language**: section titles are generated in the **same language as the transcript** (Hebrew transcripts → Hebrew titles; English transcripts → English titles). If the client has to repair missing indices, “Unassigned” section titles are also localized (Hebrew: “לא משויך”).
@@ -136,6 +137,9 @@ Responsibilities:
 - Row contents:
   - a vertical colored spine line on the **right edge** (from `section.color`)
   - section title (right-aligned; double-click to rename per Phase 7)
+  - section description (AI-generated 1–2 sentences) shown under the title
+    - clamped to 2 lines and clipped (does not change section block height)
+    - full text is available via hover tooltip
   - section duration (`MM:SS`)
   - enable/disable as an **eye icon** button calling `toggleSection(section.id)`
   - layout order (right → left): **Title, Duration, Eye**
