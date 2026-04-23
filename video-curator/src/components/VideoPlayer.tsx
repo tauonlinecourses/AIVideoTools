@@ -1,5 +1,6 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
+import { computeSectionTimeRanges } from '../lib/sectionsTime'
 
 export type VideoPlayerHandle = {
   seekTo: (time: number) => void
@@ -61,6 +62,8 @@ function PauseIcon() {
 const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
   function VideoPlayer({ className }, ref) {
     const videoUrl = useStore(s => s.videoUrl)
+    const sections = useStore(s => s.sections)
+    const videoDuration = useStore(s => s.videoDuration)
     const setCurrentTime = useStore(s => s.setCurrentTime)
     const setVideoMeta = useStore(s => s.setVideoMeta)
 
@@ -76,6 +79,27 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
 
     const [duration, setDuration] = useState(0)
     const durationLabel = useMemo(() => formatMMSS(duration), [duration])
+
+    const sectionRanges = useMemo(() => {
+      return computeSectionTimeRanges(sections, videoDuration)
+    }, [sections, videoDuration])
+
+    const hasEnabledSections = useMemo(
+      () => sections.some(s => s.isEnabled),
+      [sections]
+    )
+
+    const sectionRangesRef = useRef(sectionRanges)
+    const hasEnabledSectionsRef = useRef(hasEnabledSections)
+
+    const manualSeekUntilMsRef = useRef(0)
+    const lastAutoSkipTargetRef = useRef<number | null>(null)
+    const lastAutoSkipAtMsRef = useRef(0)
+
+    useEffect(() => {
+      sectionRangesRef.current = sectionRanges
+      hasEnabledSectionsRef.current = hasEnabledSections
+    }, [sectionRanges, hasEnabledSections])
 
     useEffect(() => {
       const el = durationLabelRef.current
@@ -202,6 +226,68 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const t = clampTime(video.currentTime)
         currentTimeRef.current = t
 
+        // Skip disabled sections only during normal playback progression.
+        // - If user manually sought recently, do nothing.
+        // - If all sections are disabled, do nothing (play full original).
+        const ranges = sectionRangesRef.current
+        const hasEnabled = hasEnabledSectionsRef.current
+        if (!video.paused && hasEnabled && ranges.length > 0) {
+          const nowMs = Date.now()
+          const recentlyManualSeeked = nowMs < manualSeekUntilMsRef.current
+          const recentlyAutoSkipped = nowMs - lastAutoSkipAtMsRef.current < 250
+
+          if (!recentlyManualSeeked && !recentlyAutoSkipped) {
+            const EPS = 0.03
+            const cur = t
+
+            let activeIdx = -1
+            for (let i = 0; i < ranges.length; i++) {
+              const r = ranges[i]
+              if (cur >= r.start - EPS && cur < r.end - EPS) {
+                activeIdx = i
+                break
+              }
+            }
+
+            if (activeIdx >= 0) {
+              const active = ranges[activeIdx]
+              if (!active.isEnabled) {
+                let nextEnabled: number | null = null
+                for (let j = activeIdx + 1; j < ranges.length; j++) {
+                  if (ranges[j].isEnabled) {
+                    nextEnabled = ranges[j].start
+                    break
+                  }
+                }
+
+                if (nextEnabled != null) {
+                  const target = Math.max(0, nextEnabled + EPS)
+                  if (lastAutoSkipTargetRef.current == null || Math.abs(target - lastAutoSkipTargetRef.current) > 0.01) {
+                    try {
+                      video.currentTime = target
+                      lastAutoSkipTargetRef.current = target
+                      lastAutoSkipAtMsRef.current = nowMs
+                    } catch {
+                      // ignore
+                    }
+                  }
+                } else {
+                  // No enabled content after this point: pause at the end of the disabled range.
+                  try {
+                    const endTarget = Math.max(0, active.end)
+                    video.currentTime = endTarget
+                    video.pause()
+                    lastAutoSkipTargetRef.current = endTarget
+                    lastAutoSkipAtMsRef.current = nowMs
+                  } catch {
+                    // ignore
+                  }
+                }
+              }
+            }
+          }
+        }
+
         const timeEl = timeLabelRef.current
         if (timeEl) {
           timeEl.textContent = formatMMSS(t)
@@ -228,6 +314,8 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
         const video = videoRef.current
         if (!video) return
         const t = clampTime(time)
+        manualSeekUntilMsRef.current = Date.now() + 600
+        lastAutoSkipTargetRef.current = null
         video.currentTime = t
         currentTimeRef.current = t
         setCurrentTime(t)

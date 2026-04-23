@@ -334,7 +334,7 @@ Scrubber:
   - A vertical line (`3px`, black)
   - A small upside-down (down-pointing) black triangle marker rendered **above the timeline bar**, aligned to the line
   - `pct = (currentTime / totalDuration) * 100`
-- Updated via `requestAnimationFrame` by directly setting `scrubberRef.current.style.left = pct + '%'`.
+- Updated via `requestAnimationFrame` by directly setting a **center-positioned playhead wrapper** `style.left = pct + '%'` (the line + triangle are centered on that point).
 - The rAF loop is started in `useEffect` and cancelled on unmount to avoid leaks.
 
 Interactions:
@@ -342,7 +342,8 @@ Interactions:
   - `time = (clickX / containerWidth) * totalDuration`
 - Clicking a section block:
   - Calls `onSectionClick(section.id)`
-  - Also calls `onSeek(sectionStartTime)`
+  - Also calls `onSeek(timeWithinSection)` based on the click position inside the block:
+    - `timeWithinSection = sectionStartTime + (localClickX / blockWidth) * (sectionEndTime - sectionStartTime)`
 
 Empty state:
 - When `sections.length === 0`, the timeline is still shown as a scrub-able bar driven by the uploaded video’s metadata:
@@ -394,6 +395,14 @@ Goal: allow `Timeline` and `TranscriptPane` to react to playback without re-rend
   - `video.currentTime = time`
   - internal refs (`currentTimeRef`, last synced time)
   - `store.setCurrentTime(time)` immediately
+
+#### Skip disabled sections during playback
+When `store.sections.length > 0`, the player will **skip disabled sections** (`section.isEnabled === false`) while the video is **actively playing**:
+- **Playback-only**: skipping is enforced only when `video.paused === false` (normal playback progression).
+- **Manual seek exception**: when the user seeks programmatically (timeline click / transcript click via `seekTo(...)`), skip enforcement is temporarily suppressed for a short window so the user can land inside disabled sections if desired.
+- **All sections disabled**: if no sections are enabled, the player behaves like a normal video player and does **not** skip (plays the full original).
+- **Skip target**: when playback enters a disabled section, the player seeks to the next enabled section’s start time.
+- **End case**: if playback enters a disabled section and there is no enabled section after it, the player seeks to that disabled section’s end time and pauses.
 
 ### App wiring for Phase 6
 Path: `video-curator/src/App.tsx`

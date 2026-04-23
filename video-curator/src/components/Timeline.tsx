@@ -70,7 +70,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
   const timelinePosterUrl = useStore(s => s.timelinePosterUrl)
 
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const scrubberRef = useRef<HTMLDivElement | null>(null)
+  const playheadRef = useRef<HTMLDivElement | null>(null)
 
   const [containerWidthPx, setContainerWidthPx] = useState(0)
 
@@ -135,11 +135,13 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     let rafId = 0
 
     const tick = () => {
-      const scrubber = scrubberRef.current
-      if (scrubber) {
+      const playhead = playheadRef.current
+      if (playhead) {
         const { currentTime } = useStore.getState()
         const pct = totalDuration > 0 ? clamp01(currentTime / totalDuration) * 100 : 0
-        scrubber.style.left = `${pct}%`
+        // Position by center-point to keep the line and the triangle perfectly locked
+        // (avoids subpixel drift when positioning by the left edge of a 3px line).
+        playhead.style.left = `${pct}%`
       }
       rafId = window.requestAnimationFrame(tick)
     }
@@ -236,7 +238,14 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
                   e.preventDefault()
                   e.stopPropagation()
                   onSectionClick(b.id)
-                  onSeek(b.startTime)
+
+                  // Seek to the exact position clicked within the section block (not snapped to section start).
+                  const target = e.currentTarget
+                  const r = target.getBoundingClientRect()
+                  const localX = e.clientX - r.left
+                  const localPct = clamp01(r.width > 0 ? localX / r.width : 0)
+                  const t = b.startTime + localPct * (b.endTime - b.startTime)
+                  onSeek(t)
                 }}
                 aria-label={tooltip}
               >
@@ -272,14 +281,15 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
       </div>
 
       <div
-        ref={scrubberRef}
-        className="pointer-events-none absolute top-0 h-full w-[3px] bg-black"
+        ref={playheadRef}
+        className="pointer-events-none absolute top-0 h-full w-0 -translate-x-1/2"
         style={{ left: '0%' }}
         aria-hidden="true"
       >
+        <div className="absolute left-0 top-0 h-full w-[3px] -translate-x-1/2 bg-black" aria-hidden="true" />
         <div
           className={[
-            'absolute left-1/2 -translate-x-1/2 -ml-[0.1px]',
+            'absolute left-0 -translate-x-1/2',
             '-top-[7px]',
             'w-0 h-0',
             'border-l-[6px] border-l-transparent',
