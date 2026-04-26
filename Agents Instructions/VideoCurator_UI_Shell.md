@@ -35,7 +35,9 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
   - **Deploy requirement**: Vercel must build from repo root (so `/api/*` is deployed) while running the build inside `video-curator/`.
     - If you set the Vercel project Root Directory to `video-curator/`, `/api/segment-transcript` will be missing in production and the UI will fall back to equal-sized chunks.
 - The repo includes a `vercel.json` that sets:
-  - `buildCommand`: `cd video-curator && npm ci && npm run build`
+  - `buildCommand`: runs `npm ci && npm run build` from whichever directory Vercel starts in:
+    - If the working directory already contains a `package.json` (e.g. Vercel starts in `video-curator/`), it runs the build there.
+    - Otherwise it `cd video-curator` first (repo-root deploy).
   - `outputDirectory`: `video-curator/dist`
 - TypeScript build settings are strict enough that **unused locals/parameters fail the build** (e.g. `TS6133`). Do not leave dead helpers or unused imports in committed code.
 - **AI output invariants (must hold)**:

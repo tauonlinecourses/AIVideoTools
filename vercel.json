@@ -1,7 +1,7 @@
 {
   "version": 2,
 
-  "buildCommand": "cd video-curator && npm ci && npm run build",
+  "buildCommand": "if [ -f package.json ]; then npm ci && npm run build; else cd video-curator && npm ci && npm run build; fi",
   "outputDirectory": "video-curator/dist",
 
   "rewrites": [
