@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore, type Section } from '../lib/store'
+import { useStore } from '../lib/store'
+import { formatMMSS, formatMMSSFloor } from '../lib/formatTime'
+import type { Section } from '../types/transcript'
 
 export interface TimelineProps {
   onSeek: (time: number) => void
@@ -21,22 +23,6 @@ type SectionBlock = {
 function clamp01(x: number): number {
   if (!Number.isFinite(x)) return 0
   return Math.min(1, Math.max(0, x))
-}
-
-function formatMMSS(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const rounded = Math.max(0, Math.round(totalSeconds))
-  const mm = Math.floor(rounded / 60)
-  const ss = rounded % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-}
-
-function formatMMSSFloor(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const floored = Math.max(0, Math.floor(totalSeconds))
-  const mm = Math.floor(floored / 60)
-  const ss = floored % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
 function sectionStartEnd(
@@ -64,7 +50,7 @@ function sectionStartEnd(
   return { start, end }
 }
 
-export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
+export function Timeline({ onSeek, onSectionClick, className }: TimelineProps): React.ReactElement {
   const sections = useStore(s => s.sections)
   const videoDuration = useStore(s => s.videoDuration)
   const timelinePosterUrl = useStore(s => s.timelinePosterUrl)
@@ -74,9 +60,9 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
 
   const [containerWidthPx, setContainerWidthPx] = useState(0)
 
-  const { blocks, totalDuration } = useMemo(() => {
+  const { blocks, totalDuration } = useMemo<{ blocks: SectionBlock[]; totalDuration: number }>(() => {
     if (sections.length === 0) {
-      return { blocks: [] as SectionBlock[], totalDuration: videoDuration }
+      return { blocks: [], totalDuration: videoDuration }
     }
     const durations = sections.map((s, idx) => {
       const { start, end } = sectionStartEnd(s, {
@@ -150,7 +136,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     return () => window.cancelAnimationFrame(rafId)
   }, [totalDuration])
 
-  const onBackgroundClick = (e: React.MouseEvent) => {
+  const onBackgroundClick = (e: React.MouseEvent): void => {
     const el = containerRef.current
     if (!el) return
     if (totalDuration <= 0) return

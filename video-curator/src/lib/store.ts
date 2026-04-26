@@ -1,15 +1,8 @@
 import { create } from 'zustand'
-import type { SrtItem } from './parseSrt'
+import type { Section, SrtItem } from '../types/transcript'
 import { segmentTranscript } from './segmentTranscript'
 
-export interface Section {
-  id: number
-  title: string
-  description: string
-  color: string
-  isEnabled: boolean
-  items: SrtItem[]
-}
+export type { Section, SrtItem } from '../types/transcript'
 
 export interface AppState {
   // Files
@@ -62,7 +55,7 @@ const SECTION_COLORS = [
   '#F97316', // orange
 ]
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set): AppState => ({
   // Initial state
   videoFile: null,
   videoUrl: null,
@@ -121,7 +114,7 @@ export const useStore = create<AppState>((set) => ({
   })),
 
   moveSentenceUp: (sectionId, itemIndex) => set((state) => {
-    const normalize = (items: SrtItem[]) =>
+    const normalize = (items: SrtItem[]): SrtItem[] =>
       [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
 
     const sections = [...state.sections]
@@ -146,7 +139,7 @@ export const useStore = create<AppState>((set) => ({
   }),
 
   moveSentenceDown: (sectionId, itemIndex) => set((state) => {
-    const normalize = (items: SrtItem[]) =>
+    const normalize = (items: SrtItem[]): SrtItem[] =>
       [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
 
     const sections = [...state.sections]
@@ -169,7 +162,7 @@ export const useStore = create<AppState>((set) => ({
     sections[toIdx] = toSection
     return { sections }
   }),
-  generateSections: async () => {
+  generateSections: async (): Promise<void> => {
     const { srtItems, setIsGenerating, setGenerateProgress, setSections, setGenerateError } = useStore.getState()
 
     if (srtItems.length === 0) return
@@ -182,7 +175,7 @@ export const useStore = create<AppState>((set) => ({
     // that starts a bit slower, then creeps upward and caps at 96% until completion.
     let tick: number | null = null
     const start = Date.now()
-    const step = () => {
+    const step = (): void => {
       const elapsedMs = Date.now() - start
       // A slow-starting curve that keeps creeping upward while waiting.
       // Approaches 96% asymptotically, never reaching it in finite time.

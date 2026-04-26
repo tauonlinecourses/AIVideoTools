@@ -1,19 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore, type Section } from '../lib/store'
+import type React from 'react'
+import { useStore } from '../lib/store'
+import { cx } from '../lib/classNames'
 import { exportSrt } from '../lib/exportSrt'
 import { exportVideo } from '../lib/exportVideo'
-
-function formatMMSS(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const rounded = Math.max(0, Math.round(totalSeconds))
-  const mm = Math.floor(rounded / 60)
-  const ss = rounded % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-}
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(' ')
-}
+import { formatMMSS } from '../lib/formatTime'
+import type { Section } from '../types/transcript'
 
 function sectionStartTimeSeconds(section: Section): number | null {
   if (!section.items || section.items.length === 0) return null
@@ -30,7 +22,43 @@ export interface SectionManagerProps {
   onSeek: (time: number) => void
 }
 
-export function SectionManager({ onSeek }: SectionManagerProps) {
+function DownloadIcon({ className }: { className?: string }): React.ReactElement {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      aria-hidden="true"
+      className={className}
+    >
+      <path
+        d="M12 3v10"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 11l4 4 4-4"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M4 21h16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
+export function SectionManager({ onSeek }: SectionManagerProps): React.ReactElement {
   const sections = useStore(s => s.sections)
   const videoFile = useStore(s => s.videoFile)
   const videoDuration = useStore(s => s.videoDuration)
@@ -137,7 +165,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
   const hasSections = sections.length > 0
   const disableExports = !hasSections || !hasEnabledSections || isExporting
 
-  const downloadBlob = (blob: Blob, filename: string) => {
+  const downloadBlob = (blob: Blob, filename: string): void => {
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
@@ -145,40 +173,6 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
     a.click()
     URL.revokeObjectURL(url)
   }
-
-  const DownloadIcon = ({ className }: { className?: string }) => (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-      className={className}
-    >
-      <path
-        d="M12 3v10"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M8 11l4 4 4-4"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4 21h16"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  )
 
   return (
     <div className="flex h-full flex-col">

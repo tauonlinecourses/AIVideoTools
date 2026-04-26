@@ -1,6 +1,6 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { fetchFile, toBlobURL } from '@ffmpeg/util'
-import type { Section } from './store'
+import type { Section } from '../types/transcript'
 
 let ffmpegSingleton: FFmpeg | null = null
 let loadPromise: Promise<unknown> | null = null
@@ -71,8 +71,8 @@ export async function exportVideo(
     throw new Error('No valid enabled sections to export.')
   }
 
-  const safeVideoDuration = Number.isFinite(videoDuration as number) && (videoDuration as number) > 0
-    ? (videoDuration as number)
+  const safeVideoDuration = typeof videoDuration === 'number' && Number.isFinite(videoDuration) && videoDuration > 0
+    ? videoDuration
     : null
 
   // Include intro/outro time that has no transcript cues:
@@ -152,8 +152,11 @@ export async function exportVideo(
 
     const data = await ffmpeg.readFile(outputName)
     onProgress(100)
+    if (!(data instanceof Uint8Array)) {
+      throw new Error('FFmpeg returned unexpected output data.')
+    }
     // Ensure we hand Blob an ArrayBuffer-backed view (not SharedArrayBuffer-backed).
-    const bytes = new Uint8Array(data as Uint8Array)
+    const bytes = new Uint8Array(data)
     return new Blob([bytes], { type: 'video/mp4' })
   } finally {
     // Best-effort cleanup.

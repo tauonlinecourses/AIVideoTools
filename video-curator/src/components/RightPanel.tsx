@@ -1,9 +1,10 @@
 import { useMemo, useRef } from 'react'
+import type React from 'react'
 import { useStore } from '../lib/store'
 import { SectionManager } from './SectionManager'
 import { UploadZone, type UploadZoneHandle } from './UploadZone'
 
-function Spinner() {
+function Spinner(): React.ReactElement {
   return (
     <span
       className="inline-block h-4 w-4 animate-spin border-2 border-white/40 border-t-white"
@@ -16,7 +17,7 @@ export interface RightPanelProps {
   onSeek: (time: number) => void
 }
 
-export function RightPanel({ onSeek }: RightPanelProps) {
+export function RightPanel({ onSeek }: RightPanelProps): React.ReactElement {
   const videoFile = useStore(s => s.videoFile)
   const srtItemsCount = useStore(s => s.srtItems.length)
   const sectionsCount = useStore(s => s.sections.length)

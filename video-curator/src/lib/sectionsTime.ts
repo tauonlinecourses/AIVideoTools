@@ -1,4 +1,4 @@
-import type { Section } from './store'
+import type { Section } from '../types/transcript'
 
 export type SectionTimeRange = {
   sectionId: number

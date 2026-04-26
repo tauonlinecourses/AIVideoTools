@@ -15,6 +15,14 @@ This document describes the Phase 3 UI shell implementation for the Video Curato
 ## Source of truth: Zustand store
 Store hook: `video-curator/src/lib/store.ts` exports `useStore()`.
 
+Shared data models:
+- `video-curator/src/types/transcript.ts` defines `SrtItem` and `Section`.
+- `store.ts` re-exports those types for compatibility, but new non-store code should import shared models from `src/types/transcript.ts`.
+
+Shared utility modules:
+- `video-curator/src/lib/formatTime.ts` owns `formatMMSS()` and `formatMMSSFloor()` for component time labels.
+- `video-curator/src/lib/classNames.ts` owns the small `cx()` class-name join helper used by UI components.
+
 ## Environment setup (AI segmentation)
 The transcript auto-segmentation feature calls **your own** `/api/segment-transcript` endpoint via `video-curator/src/lib/segmentTranscript.ts`, and that endpoint calls OpenAI **server-side**.
 

@@ -1,11 +1,12 @@
 import { RightPanel } from './components/RightPanel'
 import { useCallback, useRef } from 'react'
+import type React from 'react'
 import { Timeline } from './components/Timeline'
 import { TranscriptPane, type TranscriptPaneHandle } from './components/TranscriptPane'
 import { useStore } from './lib/store'
 import { VideoPlayer, type VideoPlayerHandle } from './components/VideoPlayer'
 
-function App() {
+function App(): React.ReactElement {
   const sections = useStore(s => s.sections)
 
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null)

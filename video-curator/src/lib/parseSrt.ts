@@ -1,11 +1,5 @@
 import SrtParser2 from 'srt-parser-2'
-
-export interface SrtItem {
-  index: number
-  startTime: number
-  endTime: number
-  text: string
-}
+import type { SrtItem } from '../types/transcript'
 
 function timeToSeconds(time: string): number {
   const [hours, minutes, rest] = time.split(':')

@@ -1,6 +1,7 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import { useStore } from '../lib/store'
 import { computeSectionTimeRanges } from '../lib/sectionsTime'
+import { formatMMSS } from '../lib/formatTime'
 
 export type VideoPlayerHandle = {
   seekTo: (time: number) => void
@@ -8,14 +9,6 @@ export type VideoPlayerHandle = {
 
 export interface VideoPlayerProps {
   className?: string
-}
-
-function formatMMSS(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const rounded = Math.max(0, Math.round(totalSeconds))
-  const mm = Math.floor(rounded / 60)
-  const ss = rounded % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
 function clampTime(t: number): number {
@@ -43,7 +36,7 @@ function captureFirstFrameDataUrl(video: HTMLVideoElement): string | null {
   }
 }
 
-function PlayIcon() {
+function PlayIcon(): React.ReactElement {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
       <path fill="currentColor" d="M8 5v14l12-7-12-7z" />
@@ -51,7 +44,7 @@ function PlayIcon() {
   )
 }
 
-function PauseIcon() {
+function PauseIcon(): React.ReactElement {
   return (
     <svg viewBox="0 0 24 24" className="h-6 w-6" aria-hidden="true">
       <path fill="currentColor" d="M6 5h4v14H6V5zm8 0h4v14h-4V5z" />
@@ -60,7 +53,7 @@ function PauseIcon() {
 }
 
 const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
-  function VideoPlayer({ className }, ref) {
+  function VideoPlayer({ className }, ref): React.ReactElement {
     const videoUrl = useStore(s => s.videoUrl)
     const sections = useStore(s => s.sections)
     const videoDuration = useStore(s => s.videoDuration)
@@ -220,94 +213,93 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     }, [setVideoMeta, videoUrl])
 
-    function tick() {
-      const video = videoRef.current
-      if (video) {
-        const t = clampTime(video.currentTime)
-        currentTimeRef.current = t
+    useEffect(() => {
+      const tick = (): void => {
+        const video = videoRef.current
+        if (video) {
+          const t = clampTime(video.currentTime)
+          currentTimeRef.current = t
 
-        // Skip disabled sections only during normal playback progression.
-        // - If user manually sought recently, do nothing.
-        // - If all sections are disabled, do nothing (play full original).
-        const ranges = sectionRangesRef.current
-        const hasEnabled = hasEnabledSectionsRef.current
-        if (!video.paused && hasEnabled && ranges.length > 0) {
-          const nowMs = Date.now()
-          const recentlyManualSeeked = nowMs < manualSeekUntilMsRef.current
-          const recentlyAutoSkipped = nowMs - lastAutoSkipAtMsRef.current < 250
+          // Skip disabled sections only during normal playback progression.
+          // - If user manually sought recently, do nothing.
+          // - If all sections are disabled, do nothing (play full original).
+          const ranges = sectionRangesRef.current
+          const hasEnabled = hasEnabledSectionsRef.current
+          if (!video.paused && hasEnabled && ranges.length > 0) {
+            const nowMs = Date.now()
+            const recentlyManualSeeked = nowMs < manualSeekUntilMsRef.current
+            const recentlyAutoSkipped = nowMs - lastAutoSkipAtMsRef.current < 250
 
-          if (!recentlyManualSeeked && !recentlyAutoSkipped) {
-            const EPS = 0.03
-            const cur = t
+            if (!recentlyManualSeeked && !recentlyAutoSkipped) {
+              const EPS = 0.03
+              const cur = t
 
-            let activeIdx = -1
-            for (let i = 0; i < ranges.length; i++) {
-              const r = ranges[i]
-              if (cur >= r.start - EPS && cur < r.end - EPS) {
-                activeIdx = i
-                break
-              }
-            }
-
-            if (activeIdx >= 0) {
-              const active = ranges[activeIdx]
-              if (!active.isEnabled) {
-                let nextEnabled: number | null = null
-                for (let j = activeIdx + 1; j < ranges.length; j++) {
-                  if (ranges[j].isEnabled) {
-                    nextEnabled = ranges[j].start
-                    break
-                  }
+              let activeIdx = -1
+              for (let i = 0; i < ranges.length; i++) {
+                const r = ranges[i]
+                if (cur >= r.start - EPS && cur < r.end - EPS) {
+                  activeIdx = i
+                  break
                 }
+              }
 
-                if (nextEnabled != null) {
-                  const target = Math.max(0, nextEnabled + EPS)
-                  if (lastAutoSkipTargetRef.current == null || Math.abs(target - lastAutoSkipTargetRef.current) > 0.01) {
+              if (activeIdx >= 0) {
+                const active = ranges[activeIdx]
+                if (!active.isEnabled) {
+                  let nextEnabled: number | null = null
+                  for (let j = activeIdx + 1; j < ranges.length; j++) {
+                    if (ranges[j].isEnabled) {
+                      nextEnabled = ranges[j].start
+                      break
+                    }
+                  }
+
+                  if (nextEnabled != null) {
+                    const target = Math.max(0, nextEnabled + EPS)
+                    if (lastAutoSkipTargetRef.current == null || Math.abs(target - lastAutoSkipTargetRef.current) > 0.01) {
+                      try {
+                        video.currentTime = target
+                        lastAutoSkipTargetRef.current = target
+                        lastAutoSkipAtMsRef.current = nowMs
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  } else {
+                    // No enabled content after this point: pause at the end of the disabled range.
                     try {
-                      video.currentTime = target
-                      lastAutoSkipTargetRef.current = target
+                      const endTarget = Math.max(0, active.end)
+                      video.currentTime = endTarget
+                      video.pause()
+                      lastAutoSkipTargetRef.current = endTarget
                       lastAutoSkipAtMsRef.current = nowMs
                     } catch {
                       // ignore
                     }
                   }
-                } else {
-                  // No enabled content after this point: pause at the end of the disabled range.
-                  try {
-                    const endTarget = Math.max(0, active.end)
-                    video.currentTime = endTarget
-                    video.pause()
-                    lastAutoSkipTargetRef.current = endTarget
-                    lastAutoSkipAtMsRef.current = nowMs
-                  } catch {
-                    // ignore
-                  }
                 }
               }
             }
           }
-        }
 
-        const timeEl = timeLabelRef.current
-        if (timeEl) {
-          timeEl.textContent = formatMMSS(t)
-        }
+          const timeEl = timeLabelRef.current
+          if (timeEl) {
+            timeEl.textContent = formatMMSS(t)
+          }
 
-        if (Math.abs(t - lastSyncedTime.current) > 0.1) {
-          setCurrentTime(t)
-          lastSyncedTime.current = t
+          if (Math.abs(t - lastSyncedTime.current) > 0.1) {
+            setCurrentTime(t)
+            lastSyncedTime.current = t
+          }
         }
+        rafRef.current = window.requestAnimationFrame(tick)
       }
-      rafRef.current = window.requestAnimationFrame(tick)
-    }
 
-    useEffect(() => {
       rafRef.current = window.requestAnimationFrame(tick)
       return () => {
         if (rafRef.current != null) window.cancelAnimationFrame(rafRef.current)
       }
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [])
+    }, [setCurrentTime])
 
     useImperativeHandle(ref, () => ({
       seekTo: (time: number) => {
@@ -325,7 +317,7 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       },
     }), [setCurrentTime])
 
-    const togglePlay = async () => {
+    const togglePlay = async (): Promise<void> => {
       const video = videoRef.current
       if (!video) return
       if (!videoUrl) return
@@ -345,7 +337,7 @@ const VideoPlayerImpl = React.forwardRef<VideoPlayerHandle, VideoPlayerProps>(
       }
     }
 
-    const onPreviewClick = () => {
+    const onPreviewClick = (): void => {
       void togglePlay()
     }
 

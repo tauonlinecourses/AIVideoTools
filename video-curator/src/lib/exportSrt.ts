@@ -1,4 +1,4 @@
-import type { Section } from './store'
+import type { Section } from '../types/transcript'
 
 function secondsToSrtTime(seconds: number): string {
   const safe = Number.isFinite(seconds) ? Math.max(0, seconds) : 0

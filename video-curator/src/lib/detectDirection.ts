@@ -1,4 +1,4 @@
-import type { SrtItem } from './parseSrt'
+import type { SrtItem } from '../types/transcript'
 
 const HEBREW_REGEX = /[\u0590-\u05FF]/
 

@@ -1,21 +1,53 @@
-export default async function handler(req: any, res: any) {
+import type { IncomingMessage, ServerResponse } from 'node:http'
+
+type JsonRequest = IncomingMessage & {
+  body?: unknown
+}
+
+function sendJson(res: ServerResponse, statusCode: number, payload: unknown): void {
+  res.statusCode = statusCode
+  res.setHeader('Content-Type', 'application/json')
+  res.end(JSON.stringify(payload))
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+function getPrompt(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return undefined
+  if (!('prompt' in body)) return undefined
+  return body.prompt
+}
+
+function getOpenAiContent(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('choices' in data) || !Array.isArray(data.choices)) {
+    return null
+  }
+
+  const firstChoice = data.choices[0]
+  if (!firstChoice || typeof firstChoice !== 'object' || !('message' in firstChoice)) return null
+
+  const message = firstChoice.message
+  if (!message || typeof message !== 'object' || !('content' in message)) return null
+
+  return typeof message.content === 'string' ? message.content : null
+}
+
+export default async function handler(req: JsonRequest, res: ServerResponse): Promise<void> {
   if (req.method !== 'POST') {
-    res.statusCode = 405
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ error: 'Method not allowed' }))
+    sendJson(res, 405, { error: 'Method not allowed' })
     return
   }
 
   // Prefer server-only var name. Allow legacy VITE_OPENAI_KEY as fallback.
   const apiKey = process.env.OPENAI_API_KEY || process.env.VITE_OPENAI_KEY
   if (!apiKey) {
-    res.statusCode = 500
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ error: 'Missing OPENAI_API_KEY on server' }))
+    sendJson(res, 500, { error: 'Missing OPENAI_API_KEY on server' })
     return
   }
 
-  let body: any = null
+  let body: unknown = null
   try {
     // Vercel Node functions usually give parsed JSON, but handle raw body just in case.
     body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body
@@ -23,11 +55,9 @@ export default async function handler(req: any, res: any) {
     body = null
   }
 
-  const prompt = body?.prompt
+  const prompt = getPrompt(body)
   if (!prompt || typeof prompt !== 'string') {
-    res.statusCode = 400
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ error: 'Missing prompt' }))
+    sendJson(res, 400, { error: 'Missing prompt' })
     return
   }
 
@@ -57,29 +87,21 @@ export default async function handler(req: any, res: any) {
 
     const text = await upstream.text()
     if (!upstream.ok) {
-      res.statusCode = upstream.status
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: `OpenAI API error: ${upstream.status}`, details: text }))
+      sendJson(res, upstream.status, { error: `OpenAI API error: ${upstream.status}`, details: text })
       return
     }
 
-    const data = JSON.parse(text)
-    const content = data?.choices?.[0]?.message?.content
+    const data: unknown = JSON.parse(text)
+    const content = getOpenAiContent(data)
 
-    if (!content || typeof content !== 'string') {
-      res.statusCode = 502
-      res.setHeader('Content-Type', 'application/json')
-      res.end(JSON.stringify({ error: 'OpenAI response missing content' }))
+    if (!content) {
+      sendJson(res, 502, { error: 'OpenAI response missing content' })
       return
     }
 
-    res.statusCode = 200
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ content }))
-  } catch (err: any) {
-    res.statusCode = 500
-    res.setHeader('Content-Type', 'application/json')
-    res.end(JSON.stringify({ error: 'Server error', details: String(err?.message ?? err) }))
+    sendJson(res, 200, { content })
+  } catch (err: unknown) {
+    sendJson(res, 500, { error: 'Server error', details: getErrorMessage(err) })
   }
 }
 

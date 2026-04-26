@@ -1,5 +1,4 @@
-import type { SrtItem } from './parseSrt'
-import type { Section } from './store'
+import type { Section, SrtItem } from '../types/transcript'
 import { assignColors } from './store'
 
 const MAX_CHARS = 12000
@@ -164,28 +163,21 @@ function repairPartialResponse(
   }
 
   const allCovered = ownerTitle.every(t => t !== null)
-  const hasNoDuplicatesOrGaps =
-    allCovered &&
-    (() => {
-      // Ensure each index assigned exactly once (true by construction if allCovered).
-      return true
-    })()
-
-  if (hasNoDuplicatesOrGaps) return { repaired: data, wasRepaired: false }
+  if (allCovered) return { repaired: data, wasRepaired: false }
 
   // Reconstruct sections as consecutive runs across 0..N-1.
   const repairedSections: GptSection[] = []
   let nextId = 1
   let unassignedBlock = 0
 
-  const titleFor = (t: string | null) => {
+  const titleFor = (t: string | null): string => {
     if (t) return t
     unassignedBlock += 1
     const base = titleLanguage === 'he' ? 'לא משויך' : 'Unassigned'
     return unassignedBlock === 1 ? base : `${base} (${unassignedBlock})`
   }
 
-  const descriptionFor = (d: string | null) => {
+  const descriptionFor = (d: string | null): string => {
     if (d && d.trim().length > 0) return d.trim()
     return titleLanguage === 'he'
       ? 'קטע שלא שויך אוטומטית לסעיף.'
@@ -306,7 +298,6 @@ export async function segmentTranscript(
     const { repaired, wasRepaired } = repairPartialResponse(parsed, items.length, titleLanguage)
     const validationError = validateResponse(repaired, items.length)
     if (validationError) {
-      console.warn('Validation failed:', validationError)
       return null
     }
 
@@ -325,9 +316,6 @@ export async function segmentTranscript(
       })
     )
 
-    if (wasRepaired) {
-      console.warn('Validation repaired: model returned partial indices — filled gaps with Unassigned sections')
-    }
     return { sections, usedFallback: wasRepaired }
   }
 
@@ -338,10 +326,8 @@ export async function segmentTranscript(
     const second = await tryOnce(withStrictAddendum(basePrompt))
     if (second) return second
 
-    console.warn('Validation failed after retry — using fallback')
     return { sections: buildEqualChunkFallback(items, titleLanguage), usedFallback: true }
-  } catch (err) {
-    console.warn('Segmentation failed:', err, '— using fallback')
+  } catch {
     return { sections: buildEqualChunkFallback(items, titleLanguage), usedFallback: true }
   }
 }

@@ -1,6 +1,26 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
+function getPrompt(body: unknown): unknown {
+  if (!body || typeof body !== 'object') return undefined
+  if (!('prompt' in body)) return undefined
+  return body.prompt
+}
+
+function getOpenAiContent(data: unknown): string | null {
+  if (!data || typeof data !== 'object' || !('choices' in data) || !Array.isArray(data.choices)) {
+    return null
+  }
+
+  const firstChoice = data.choices[0]
+  if (!firstChoice || typeof firstChoice !== 'object' || !('message' in firstChoice)) return null
+
+  const message = firstChoice.message
+  if (!message || typeof message !== 'object' || !('content' in message)) return null
+
+  return typeof message.content === 'string' ? message.content : null
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -42,8 +62,7 @@ export default defineConfig(({ mode }) => {
                 body = null
               }
 
-              const prompt =
-                body && typeof body === 'object' && 'prompt' in body ? (body as { prompt?: unknown }).prompt : undefined
+              const prompt = getPrompt(body)
               if (!prompt || typeof prompt !== 'string') {
                 res.statusCode = 400
                 res.setHeader('Content-Type', 'application/json')
@@ -80,9 +99,9 @@ export default defineConfig(({ mode }) => {
                   return
                 }
 
-                const data = JSON.parse(text)
-                const content = data?.choices?.[0]?.message?.content
-                if (!content || typeof content !== 'string') {
+                const data: unknown = JSON.parse(text)
+                const content = getOpenAiContent(data)
+                if (!content) {
                   res.statusCode = 502
                   res.setHeader('Content-Type', 'application/json')
                   res.end(JSON.stringify({ error: 'OpenAI response missing content' }))

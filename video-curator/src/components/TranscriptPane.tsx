@@ -6,8 +6,10 @@ import React, {
   useMemo,
   useRef,
 } from 'react'
-import { useStore, type Section } from '../lib/store'
-import type { SrtItem } from '../lib/parseSrt'
+import { useStore } from '../lib/store'
+import { cx } from '../lib/classNames'
+import { formatMMSS, formatMMSSFloor } from '../lib/formatTime'
+import type { Section, SrtItem } from '../types/transcript'
 
 export type TranscriptPaneHandle = {
   scrollToSentence: (index: number) => void
@@ -16,26 +18,6 @@ export type TranscriptPaneHandle = {
 export interface TranscriptPaneProps {
   onSeek: (time: number) => void
   className?: string
-}
-
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(' ')
-}
-
-function formatMMSS(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const rounded = Math.max(0, Math.round(totalSeconds))
-  const mm = Math.floor(rounded / 60)
-  const ss = rounded % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-}
-
-function formatMMSSFloor(totalSeconds: number): string {
-  if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
-  const floored = Math.max(0, Math.floor(totalSeconds))
-  const mm = Math.floor(floored / 60)
-  const ss = floored % 60
-  return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
 }
 
 function sectionDurationSeconds(
@@ -90,7 +72,7 @@ function isHebrewText(text: string): boolean {
 }
 
 export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPaneProps>(
-  function TranscriptPane({ onSeek, className }, ref) {
+  function TranscriptPane({ onSeek, className }, ref): React.ReactElement {
     const srtItems = useStore(s => s.srtItems)
     const isRTL = useStore(s => s.isRTL)
     const sections = useStore(s => s.sections)

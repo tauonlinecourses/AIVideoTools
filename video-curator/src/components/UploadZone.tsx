@@ -1,7 +1,9 @@
 import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, useState } from 'react'
-import { parseSrt, type SrtItem } from '../lib/parseSrt'
+import { parseSrt } from '../lib/parseSrt'
+import type { SrtItem } from '../types/transcript'
 import { detectDirection } from '../lib/detectDirection'
 import { useStore } from '../lib/store'
+import { cx } from '../lib/classNames'
 
 export type UploadFileType = 'video' | 'transcript'
 
@@ -14,11 +16,7 @@ export interface UploadZoneProps {
   className?: string
 }
 
-function cx(...parts: Array<string | false | null | undefined>) {
-  return parts.filter(Boolean).join(' ')
-}
-
-function Icon({ type }: { type: UploadFileType }) {
+function Icon({ type }: { type: UploadFileType }): React.ReactElement {
   if (type === 'video') {
     return (
       <svg
@@ -69,7 +67,7 @@ function Icon({ type }: { type: UploadFileType }) {
   )
 }
 
-function CheckIcon() {
+function CheckIcon(): React.ReactElement {
   return (
     <svg
       width="14"
@@ -94,7 +92,7 @@ function CheckIcon() {
 export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function UploadZone(
   { fileType, className },
   ref
-) {
+): React.ReactElement {
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [transcriptFilename, setTranscriptFilename] = useState<string | null>(null)
