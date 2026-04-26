@@ -15,19 +15,6 @@ function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ')
 }
 
-function sectionDurationSeconds(section: Section): number {
-  if (!section.items || section.items.length === 0) return 0
-  let minStart = Number.POSITIVE_INFINITY
-  let maxEnd = 0
-  for (const it of section.items) {
-    if (!it) continue
-    if (Number.isFinite(it.startTime)) minStart = Math.min(minStart, it.startTime)
-    if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
-  }
-  if (!Number.isFinite(minStart) || !Number.isFinite(maxEnd)) return 0
-  return Math.max(0, maxEnd - minStart)
-}
-
 function sectionStartTimeSeconds(section: Section): number | null {
   if (!section.items || section.items.length === 0) return null
   let minStart = Number.POSITIVE_INFINITY

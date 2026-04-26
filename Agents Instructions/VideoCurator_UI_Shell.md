@@ -26,6 +26,10 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
   - Local dev: `/api/segment-transcript` returns 500 “Missing OPENAI_API_KEY …”, the UI falls back to equal-sized chunks.
   - Deploy: same, until server env is configured.
 - **Security note**: Do not ship OpenAI keys to the browser. Calling OpenAI directly from `http://localhost:5173` also fails with CORS; the `/api/...` approach avoids both CORS and key exposure.
+
+## Build + deploy (Vercel)
+- The Vercel build runs `npm run build`, which executes `tsc -b && vite build`.
+- TypeScript build settings are strict enough that **unused locals/parameters fail the build** (e.g. `TS6133`). Do not leave dead helpers or unused imports in committed code.
 - **AI output invariants (must hold)**:
   - **Contiguous sections only**: every section is a single continuous index range \([start..end]\); no section may own disjoint indices.
   - **Ordered partition**: sections are back-to-back and cover indices `0..N-1` exactly once, in order.
