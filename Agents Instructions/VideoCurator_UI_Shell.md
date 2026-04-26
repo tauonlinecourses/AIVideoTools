@@ -29,6 +29,14 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
 
 ## Build + deploy (Vercel)
 - The Vercel build runs `npm run build`, which executes `tsc -b && vite build`.
+- This repo is laid out as a small “monorepo”:
+  - The Vite app lives in `video-curator/` and outputs `video-curator/dist`.
+  - The Vercel serverless function lives at repo root: `api/segment-transcript.ts`.
+  - **Deploy requirement**: Vercel must build from repo root (so `/api/*` is deployed) while running the build inside `video-curator/`.
+    - If you set the Vercel project Root Directory to `video-curator/`, `/api/segment-transcript` will be missing in production and the UI will fall back to equal-sized chunks.
+- The repo includes a `vercel.json` that sets:
+  - `buildCommand`: `cd video-curator && npm ci && npm run build`
+  - `outputDirectory`: `video-curator/dist`
 - TypeScript build settings are strict enough that **unused locals/parameters fail the build** (e.g. `TS6133`). Do not leave dead helpers or unused imports in committed code.
 - **AI output invariants (must hold)**:
   - **Contiguous sections only**: every section is a single continuous index range \([start..end]\); no section may own disjoint indices.

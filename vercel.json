@@ -1,11 +1,21 @@
 {
-    "headers": [
-      {
-        "source": "/(.*)",
-        "headers": [
-          { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
-          { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
-        ]
-      }
-    ]
-  }
+  "version": 2,
+
+  "buildCommand": "cd video-curator && npm ci && npm run build",
+  "outputDirectory": "video-curator/dist",
+
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ],
+
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Cross-Origin-Opener-Policy", "value": "same-origin" },
+        { "key": "Cross-Origin-Embedder-Policy", "value": "require-corp" }
+      ]
+    }
+  ]
+}
