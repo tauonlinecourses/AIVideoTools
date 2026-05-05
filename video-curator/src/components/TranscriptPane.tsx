@@ -89,6 +89,13 @@ function isHebrewText(text: string): boolean {
   return /[\u0590-\u05FF\u200F]/.test(text)
 }
 
+function isWithinRange(index: number, range: { start: number; end: number } | null): boolean {
+  if (!range) return false
+  const a = Math.min(range.start, range.end)
+  const b = Math.max(range.start, range.end)
+  return index >= a && index <= b
+}
+
 export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPaneProps>(
   function TranscriptPane({ onSeek, className }, ref) {
     const srtItems = useStore(s => s.srtItems)
@@ -97,8 +104,15 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
     const videoDuration = useStore(s => s.videoDuration)
     const currentTime = useStore(s => s.currentTime)
     const toggleSection = useStore(s => s.toggleSection)
-    const moveSentenceUp = useStore(s => s.moveSentenceUp)
-    const moveSentenceDown = useStore(s => s.moveSentenceDown)
+    const selectedSectionId = useStore(s => s.selectedSectionId)
+    const selectedRange = useStore(s => s.selectedRange)
+    const setSelectedIndex = useStore(s => s.setSelectedIndex)
+    const setSelectedSectionId = useStore(s => s.setSelectedSectionId)
+    const clearSelection = useStore(s => s.clearSelection)
+    const moveSelectionToPrevSection = useStore(s => s.moveSelectionToPrevSection)
+    const moveSelectionToNextSection = useStore(s => s.moveSelectionToNextSection)
+    const createSectionFromSelection = useStore(s => s.createSectionFromSelection)
+    const removeSelectedSection = useStore(s => s.removeSelectedSection)
 
     const scrollContainerRef = useRef<HTMLDivElement | null>(null)
     const isUserScrollingRef = useRef(false)
@@ -187,12 +201,102 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
       )
     }
 
+    const selectionStart = selectedRange ? Math.min(selectedRange.start, selectedRange.end) : null
+    const selectionEnd = selectedRange ? Math.max(selectedRange.start, selectedRange.end) : null
+    const selectedCount =
+      selectionStart == null || selectionEnd == null ? 0 : Math.max(0, selectionEnd - selectionStart + 1)
+
+    const selectionMetaStart = selectionStart == null ? null : (sentenceMetaByIndex.get(selectionStart) ?? null)
+    const selectionMetaEnd = selectionEnd == null ? null : (sentenceMetaByIndex.get(selectionEnd) ?? null)
+    const selectionWithinOneSection =
+      Boolean(selectionMetaStart && selectionMetaEnd && selectionMetaStart.sectionId === selectionMetaEnd.sectionId)
+
+    const canMovePrev =
+      selectedCount > 0 && selectionWithinOneSection && (selectionMetaStart?.sectionIndex ?? 0) > 0
+    const canMoveNext =
+      selectedCount > 0 &&
+      selectionWithinOneSection &&
+      (selectionMetaStart?.sectionIndex ?? 0) < (selectionMetaStart?.sectionCount ?? 0) - 1
+    const canCreate = selectedCount > 0 && selectionWithinOneSection
+    const canRemove = selectedSectionId != null && sections.length > 1
+
     return (
       <section
         className={cx('flex h-full flex-col bg-white', className)}
       >
         <div className="px-4 py-3">
           <div className="text-sm font-semibold text-gray-900">Transcript</div>
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border border-gray-200 bg-white px-2 py-1.5">
+            <div className="text-xs text-gray-700">
+              <span className="font-semibold text-gray-900">Selected:</span>{' '}
+              <span className="tabular-nums">{selectedCount}</span>
+              {!selectedRange ? null : !selectionWithinOneSection ? (
+                <span className="ml-2 text-gray-500">(selection must be within one section)</span>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!canMovePrev}
+                onClick={() => moveSelectionToPrevSection()}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  canMovePrev ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title={canMovePrev ? 'Move selected sentences to previous section' : 'Select sentences within a non-first section'}
+              >
+                Move prev
+              </button>
+              <button
+                type="button"
+                disabled={!canMoveNext}
+                onClick={() => moveSelectionToNextSection()}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  canMoveNext ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title={canMoveNext ? 'Move selected sentences to next section' : 'Select sentences within a non-last section'}
+              >
+                Move next
+              </button>
+              <button
+                type="button"
+                disabled={!canCreate}
+                onClick={() => createSectionFromSelection()}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  canCreate ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title={canCreate ? 'Create a new section from the selected sentences' : 'Select sentences within one section'}
+              >
+                Create section
+              </button>
+              <button
+                type="button"
+                disabled={!canRemove}
+                onClick={() => removeSelectedSection()}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  canRemove ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title={canRemove ? 'Remove the selected section (merges into neighbor)' : 'Select a section checkbox to remove it'}
+              >
+                Remove section
+              </button>
+              <button
+                type="button"
+                disabled={!selectedRange && selectedSectionId == null}
+                onClick={() => clearSelection()}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  selectedRange || selectedSectionId != null ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title="Clear selection"
+              >
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
 
         <div
@@ -221,21 +325,20 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
               const muted = meta ? !meta.isEnabled : false
 
               const showSectionHeader = Boolean(meta && !isSameSectionAsPrev)
-              const showUp = Boolean(
-                meta?.isFirstInSection && meta.sectionIndex > 0 && meta.sectionItemCount > 1
-              )
-              const showDown = Boolean(
-                meta?.isLastInSection && meta.sectionIndex < meta.sectionCount - 1 && meta.sectionItemCount > 1
-              )
+              const isSectionSelected = meta ? selectedSectionId === meta.sectionId : false
 
               const timestamp = formatMMSS(item.startTime)
 
-              const activeStyle: React.CSSProperties | undefined =
-                isActive && meta
-                  ? { backgroundColor: `${meta.color}1A` } // ~10% alpha
-                  : isActive
-                    ? { backgroundColor: 'rgba(156, 163, 175, 0.10)' }
-                    : undefined
+              const isSelected = isWithinRange(item.index, selectedRange)
+
+              const rowStyle: React.CSSProperties | undefined = (() => {
+                if (isSelected && isActive && meta) return { backgroundColor: `${meta.color}26` } // ~15% alpha
+                if (isSelected && isActive) return { backgroundColor: 'rgba(156, 163, 175, 0.16)' }
+                if (isSelected) return { backgroundColor: 'rgba(0, 0, 0, 0.06)' }
+                if (isActive && meta) return { backgroundColor: `${meta.color}1A` } // ~10% alpha
+                if (isActive) return { backgroundColor: 'rgba(156, 163, 175, 0.10)' }
+                return undefined
+              })()
 
               const spineRadiusClass =
                 (!isSameSectionAsPrev && !isSameSectionAsNext) || (!showSectionHeader && !isSameSectionAsPrev && !isSameSectionAsNext)
@@ -377,11 +480,37 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                               </div>
                               <div className="mt-1 h-px bg-gray-100" />
                             </div>
-                            <div className="py-3" />
+                            <div className="flex items-start justify-end gap-2 py-3 text-xs text-gray-500">
+                              <input
+                                type="checkbox"
+                                checked={isSectionSelected}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedSectionId(e.target.checked ? meta.sectionId : null)
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-[3px] h-4 w-4 border border-gray-400 bg-white"
+                                aria-label="Select section"
+                                title="Select section"
+                              />
+                            </div>
                           </>
                         ) : (
                           <>
-                            <div className="py-3" />
+                            <div className="flex items-start justify-start gap-2 py-3 text-xs text-gray-500">
+                              <input
+                                type="checkbox"
+                                checked={isSectionSelected}
+                                onChange={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedSectionId(e.target.checked ? meta.sectionId : null)
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="mt-[3px] h-4 w-4 border border-gray-400 bg-white"
+                                aria-label="Select section"
+                                title="Select section"
+                              />
+                            </div>
                             <div className="min-w-0 h-full px-3 pt-1 pb-0">
                               <div className="flex items-center justify-end gap-2 text-right">
                                 <div className="shrink-0 inline-flex items-center gap-1 text-xs text-gray-500" dir="ltr">
@@ -497,7 +626,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                       'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
                       muted ? 'opacity-40' : ''
                     )}
-                    style={activeStyle}
+                    style={rowStyle}
                   >
                     <div
                       className={cx(
@@ -533,93 +662,31 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                             </div>
                           </div>
                           <div className="flex items-start justify-end gap-2 py-3 text-xs text-gray-500">
-                            {meta && showUp ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  moveSentenceUp(meta.sectionId, 0)
-                                }}
-                                className={[
-                                  'inline-flex h-7 w-7 items-center justify-center',
-                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
-                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
-                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                                ].join(' ')}
-                                aria-label="Move section boundary up"
-                                title="Move to previous section"
-                              >
-                                ↑
-                              </button>
-                            ) : null}
-                            {meta && showDown ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
-                                }}
-                                className={[
-                                  'inline-flex h-7 w-7 items-center justify-center',
-                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
-                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
-                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                                ].join(' ')}
-                                aria-label="Move section boundary down"
-                                title="Move to next section"
-                              >
-                                ↓
-                              </button>
-                            ) : null}
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => setSelectedIndex(item.index, e.target.checked)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="mt-[3px] h-4 w-4 border border-gray-400 bg-white"
+                              aria-label="Select sentence"
+                              title="Select sentence"
+                            />
                             <span className="pt-[5px]">{timestamp}</span>
                           </div>
                         </>
                       ) : (
                         <>
                           <div className="flex items-start justify-start gap-2 py-3 text-xs text-gray-500">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => setSelectedIndex(item.index, e.target.checked)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="mt-[3px] h-4 w-4 border border-gray-400 bg-white"
+                              aria-label="Select sentence"
+                              title="Select sentence"
+                            />
                             <span className="pt-[5px]">{timestamp}</span>
-                            {meta && showUp ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  moveSentenceUp(meta.sectionId, 0)
-                                }}
-                                className={[
-                                  'inline-flex h-7 w-7 items-center justify-center',
-                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
-                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
-                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                                ].join(' ')}
-                                aria-label="Move section boundary up"
-                                title="Move to previous section"
-                              >
-                                ↑
-                              </button>
-                            ) : null}
-                            {meta && showDown ? (
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  moveSentenceDown(meta.sectionId, meta.sectionItemCount - 1)
-                                }}
-                                className={[
-                                  'inline-flex h-7 w-7 items-center justify-center',
-                                  'bg-transparent text-[18px] font-black leading-none text-gray-900',
-                                  'transition-transform duration-150 ease-out hover:scale-125 hover:text-black',
-                                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                                ].join(' ')}
-                                aria-label="Move section boundary down"
-                                title="Move to next section"
-                              >
-                                ↓
-                              </button>
-                            ) : null}
                           </div>
                           <div
                             className="min-w-0 h-full px-3 py-3"

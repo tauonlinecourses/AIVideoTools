@@ -67,12 +67,17 @@ Users can load captions from a public YouTube video **without uploading an `.srt
 - **Files**: `videoFile`
 - **Transcript parse result**: `srtItems`, `isRTL`
 - **Generation**: `sections`, `isGenerating`, `generateProgress`, `generateError`
+- **Selection**: `selectedRange` (sentence range), `selectedSectionId` (explicit section selection)
 
 ### Store actions used in Phase 3 UI
 - **Upload video**: `setVideoFile(file)`
 - **Upload transcript**: `setSrtItems(items, isRTL)`
 - **Generate**: `generateSections()`
 - **Toggle**: `toggleSection(id)`
+- **Selection**:
+  - Sentence checkbox range: `setSelectedIndex(index, checked)`
+  - Section checkbox: `setSelectedSectionId(id | null)`
+  - Clear: `clearSelection()`
 
 ## Component map
 ### `UploadZone`
@@ -175,6 +180,7 @@ Responsibilities:
 - Renders sections as a **vertical timeline**:
   - The sections list fills the available height.
   - Each section block height is proportional to its section duration (computed from transcript item times), so the full stack represents 100% of the total sections duration (like `Timeline` widths).
+  - Each section block has a **minimum height** (`min-h-[56px]`) so the section title is always visible even for very short sections.
 - Interaction:
   - Clicking a section **title** seeks the video to that section’s start time (same behavior as clicking a sentence row in `TranscriptPane`).
 - Row contents:
@@ -184,8 +190,9 @@ Responsibilities:
     - clamped to 2 lines and clipped (does not change section block height)
     - full text is available via hover tooltip
   - section duration (`MM:SS`)
+  - a section **selection checkbox** (used for destructive actions like removing a section)
   - enable/disable as an **eye icon** button calling `toggleSection(section.id)`
-  - layout order (right → left): **Title, Duration, Eye**
+  - layout order (right → left): **Title, Duration, Eye** (+ selection checkbox at the start of the row)
   - disabled sections are muted and struck through (title), and the spine is also muted
 - Bottom:
   - `Download Video` button (exports curated video, with a left download icon)
@@ -273,9 +280,13 @@ Responsibilities:
 - Each sentence row shows:
   - Timestamp (`MM:SS`) using `SrtItem.startTime`
   - Sentence text (`SrtItem.text`)
+  - A sentence **selection checkbox** (used by the Transcript header selection panel)
 - Hover affordance:
   - On hover, sentence rows get a subtle light-gray background to indicate click-to-seek.
   - Active-row highlighting takes precedence over hover.
+- Sentence selection visuals:
+  - Selected sentences render with a subtle high-contrast background tint.
+  - Active (playback) highlight still applies; if a sentence is both active + selected, the highlight is slightly stronger.
 - Section-aware styling:
   - Each row has a vertical colored spine matching its owning section color.
     - The spine is a real element (not a CSS border) so it can be thicker and have rounded corners (`rounded-[6px]`, like the upload buttons).
@@ -295,9 +306,22 @@ Responsibilities:
 - Active sentence highlight:
   - The sentence is considered active when `store.currentTime` falls between its `startTime` and `endTime`.
   - Active rows use a light background matching the section color at low opacity (~10%).
+- Transcript header selection panel (under the “Transcript” title):
+  - Shows `Selected: N` (count of sentences in the current selection).
+  - Provides bulk actions for the current selection:
+    - `Move prev` / `Move next`: move the selected sentences to the adjacent section.
+    - `Create section`: split the current section and create a new section containing the selected range.
+    - `Remove section`: remove the explicitly selected section (merges into a neighbor). Sentence selection alone is not enough.
+    - `Clear`: clear the current selection.
+  - Selection rule (by design):
+    - Selection is a **single contiguous index range** (not arbitrary multi-select) to preserve the core invariants that sections are an ordered contiguous partition of indices.
+    - If selection spans multiple sections, bulk actions are disabled until the selection is constrained to a single section.
+ - New section color rule (manual creation):
+   - When `Create section` inserts a new section, its `section.color` is chosen from the fixed palette such that it does **not** match the immediate neighbor section colors (previous and next in the `sections` array) at the insertion point.
 - Section header (title row):
   - When a new section starts (i.e., the current sentence is the first sentence of a section), a **section header row** is inserted **above** that section’s first sentence.
   - The header shows:
+    - a section **selection checkbox** (used for destructive actions like removing a section)
     - an eye icon toggle button (enable/disable the section) to the left of the section duration
     - section duration (`MM:SS`) on the left
     - `{section.title}` (truncated if needed) on the right
@@ -311,12 +335,8 @@ Props:
 Imperative handle:
 - Exposes `scrollToSentence(index: number)` via `forwardRef` + `useImperativeHandle`, so other UI (e.g. timeline) can scroll a sentence into view programmatically.
 
-Boundary editing chevrons:
-- On the **first sentence** of each section (except the very first section), a subtle hover-only `↑` button is shown that calls:
-  - `store.moveSentenceUp(sectionId, 0)`
-- On the **last sentence** of each section (except the very last section), a subtle hover-only `↓` button is shown that calls:
-  - `store.moveSentenceDown(sectionId, lastIndex)`
-- Chevrons are shown **always** (not hover-only), and are placed **inside the timestamp column** of the relevant sentence row (adjacent to the sentence timestamp).
+Boundary editing:
+- Section boundary adjustments are performed via the Transcript header selection panel actions (bulk move prev/next), rather than per-sentence chevrons.
 
 Auto-scroll during playback:
 - When `store.currentTime` changes and causes the **active sentence index** to change, the pane scrolls the active sentence into view smoothly.

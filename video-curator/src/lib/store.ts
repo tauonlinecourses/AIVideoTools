@@ -11,6 +11,8 @@ export interface Section {
   items: SrtItem[]
 }
 
+export type SelectedRange = { start: number; end: number }
+
 export interface AppState {
   // Files
   videoFile: File | null
@@ -31,6 +33,12 @@ export interface AppState {
   generateProgress: number // 0..100 (UI only; simulated while waiting for API)
   generateError: string | null
 
+  // Transcript selection (contiguous range only)
+  selectedRange: SelectedRange | null
+
+  // Selected section (explicit section-level selection)
+  selectedSectionId: number | null
+
   // Playback
   currentTime: number
 
@@ -39,6 +47,9 @@ export interface AppState {
   setVideoMeta: (meta: { duration: number; timelinePosterUrl: string | null }) => void
   setSrtItems: (items: SrtItem[], isRTL: boolean) => void
   setSections: (sections: Section[]) => void
+  setSelectedIndex: (index: number, checked: boolean) => void
+  setSelectedSectionId: (id: number | null) => void
+  clearSelection: () => void
   setIsGenerating: (val: boolean) => void
   setGenerateProgress: (val: number) => void
   setGenerateError: (err: string | null) => void
@@ -47,6 +58,10 @@ export interface AppState {
   renameSection: (id: number, title: string) => void
   moveSentenceUp: (sectionId: number, itemIndex: number) => void
   moveSentenceDown: (sectionId: number, itemIndex: number) => void
+  moveSelectionToPrevSection: () => void
+  moveSelectionToNextSection: () => void
+  createSectionFromSelection: () => void
+  removeSelectedSection: () => void
   generateSections: () => Promise<void>
 
 }
@@ -62,6 +77,51 @@ const SECTION_COLORS = [
   '#F97316', // orange
 ]
 
+function pickSectionColorAvoidingNeighbors(args: {
+  prevColor: string | null
+  nextColor: string | null
+}): string {
+  const forbidden = new Set<string>()
+  if (args.prevColor) forbidden.add(args.prevColor)
+  if (args.nextColor) forbidden.add(args.nextColor)
+
+  for (const c of SECTION_COLORS) {
+    if (!forbidden.has(c)) return c
+  }
+
+  // Palette exhausted (or both neighbors use all colors somehow). Fall back deterministically.
+  if (args.prevColor && SECTION_COLORS[0] === args.prevColor && SECTION_COLORS.length > 1) return SECTION_COLORS[1]
+  return SECTION_COLORS[0]
+}
+
+function normalizeItems(items: SrtItem[]): SrtItem[] {
+  return [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
+}
+
+function findSectionIndexForSentenceIndex(sections: Section[], sentenceIndex: number): number {
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i]
+    for (let j = 0; j < s.items.length; j++) {
+      if (s.items[j]?.index === sentenceIndex) return i
+    }
+  }
+  return -1
+}
+
+function rangeWithinSingleSection(sections: Section[], range: SelectedRange): { sectionIndex: number; sectionId: number } | null {
+  const a = findSectionIndexForSentenceIndex(sections, range.start)
+  if (a < 0) return null
+  const b = findSectionIndexForSentenceIndex(sections, range.end)
+  if (b !== a) return null
+  return { sectionIndex: a, sectionId: sections[a].id }
+}
+
+function nextSectionId(sections: Section[]): number {
+  let maxId = 0
+  for (const s of sections) maxId = Math.max(maxId, s.id)
+  return maxId + 1
+}
+
 export const useStore = create<AppState>((set) => ({
   // Initial state
   videoFile: null,
@@ -75,6 +135,8 @@ export const useStore = create<AppState>((set) => ({
   isGenerating: false,
   generateProgress: 0,
   generateError: null,
+  selectedRange: null,
+  selectedSectionId: null,
   currentTime: 0,
 
   // Actions
@@ -84,6 +146,8 @@ export const useStore = create<AppState>((set) => ({
     videoDuration: 0,
     timelinePosterUrl: null,
     currentTime: 0,
+    selectedRange: null,
+    selectedSectionId: null,
   }),
 
   setVideoMeta: (meta) => set({
@@ -93,10 +157,45 @@ export const useStore = create<AppState>((set) => ({
 
   setSrtItems: (items, isRTL) => set({
     srtItems: items,
-    isRTL
+    isRTL,
+    selectedRange: null,
+    selectedSectionId: null,
   }),
 
-  setSections: (sections) => set({ sections }),
+  setSections: (sections) => set({ sections, selectedRange: null, selectedSectionId: null }),
+
+  setSelectedIndex: (index, checked) => set((state) => {
+    if (!Number.isFinite(index) || index < 0) return {}
+
+    const cur = state.selectedRange
+    if (checked) {
+      if (!cur) return { selectedSectionId: null, selectedRange: { start: index, end: index } }
+      return {
+        selectedSectionId: null,
+        selectedRange: {
+          start: Math.min(cur.start, index),
+          end: Math.max(cur.end, index),
+        },
+      }
+    }
+
+    // Uncheck
+    if (!cur) return {}
+    if (index < cur.start || index > cur.end) return {}
+    if (cur.start === cur.end && index === cur.start) return { selectedSectionId: null, selectedRange: null }
+
+    // If unchecking an endpoint, shrink; if unchecking in the middle, clear (deterministic).
+    if (index === cur.start) return { selectedSectionId: null, selectedRange: { start: cur.start + 1, end: cur.end } }
+    if (index === cur.end) return { selectedSectionId: null, selectedRange: { start: cur.start, end: cur.end - 1 } }
+    return { selectedSectionId: null, selectedRange: null }
+  }),
+
+  setSelectedSectionId: (id) => set((state) => ({
+    selectedSectionId: state.selectedSectionId === id ? null : id,
+    selectedRange: null,
+  })),
+
+  clearSelection: () => set({ selectedRange: null, selectedSectionId: null }),
 
   setIsGenerating: (val) => set({ isGenerating: val }),
 
@@ -121,9 +220,6 @@ export const useStore = create<AppState>((set) => ({
   })),
 
   moveSentenceUp: (sectionId, itemIndex) => set((state) => {
-    const normalize = (items: SrtItem[]) =>
-      [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx <= 0) return {}
@@ -137,8 +233,8 @@ export const useStore = create<AppState>((set) => ({
     if (!item) return {}
     toSection.items.push(item)
 
-    fromSection.items = normalize(fromSection.items)
-    toSection.items = normalize(toSection.items)
+    fromSection.items = normalizeItems(fromSection.items)
+    toSection.items = normalizeItems(toSection.items)
 
     sections[fromIdx] = fromSection
     sections[toIdx] = toSection
@@ -146,9 +242,6 @@ export const useStore = create<AppState>((set) => ({
   }),
 
   moveSentenceDown: (sectionId, itemIndex) => set((state) => {
-    const normalize = (items: SrtItem[]) =>
-      [...items].sort((a, b) => (a.index ?? 0) - (b.index ?? 0))
-
     const sections = [...state.sections]
     const fromIdx = sections.findIndex(s => s.id === sectionId)
     if (fromIdx >= sections.length - 1) return {}
@@ -162,13 +255,182 @@ export const useStore = create<AppState>((set) => ({
     if (!item) return {}
     toSection.items.unshift(item)
 
-    fromSection.items = normalize(fromSection.items)
-    toSection.items = normalize(toSection.items)
+    fromSection.items = normalizeItems(fromSection.items)
+    toSection.items = normalizeItems(toSection.items)
 
     sections[fromIdx] = fromSection
     sections[toIdx] = toSection
     return { sections }
   }),
+
+  moveSelectionToPrevSection: () => set((state) => {
+    const range = state.selectedRange
+    if (!range) return {}
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+    const within = rangeWithinSingleSection(state.sections, { start, end })
+    if (!within) return {}
+    if (within.sectionIndex <= 0) return {}
+
+    const sections = [...state.sections]
+    const fromIdx = within.sectionIndex
+    const toIdx = fromIdx - 1
+    const from = { ...sections[fromIdx], items: [...sections[fromIdx].items] }
+    const to = { ...sections[toIdx], items: [...sections[toIdx].items] }
+
+    const moving: SrtItem[] = []
+    const remaining: SrtItem[] = []
+    for (const it of from.items) {
+      const i = it.index
+      if (i >= start && i <= end) moving.push(it)
+      else remaining.push(it)
+    }
+    if (moving.length === 0) return {}
+
+    from.items = normalizeItems(remaining)
+    to.items = normalizeItems([...to.items, ...moving])
+    sections[fromIdx] = from
+    sections[toIdx] = to
+
+    // Guard against empty sections: merge empty into previous (which is `to`) by removing it.
+    if (from.items.length === 0) {
+      sections.splice(fromIdx, 1)
+    }
+
+    return { sections, selectedRange: null, selectedSectionId: null }
+  }),
+
+  moveSelectionToNextSection: () => set((state) => {
+    const range = state.selectedRange
+    if (!range) return {}
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+    const within = rangeWithinSingleSection(state.sections, { start, end })
+    if (!within) return {}
+    if (within.sectionIndex >= state.sections.length - 1) return {}
+
+    const sections = [...state.sections]
+    const fromIdx = within.sectionIndex
+    const toIdx = fromIdx + 1
+    const from = { ...sections[fromIdx], items: [...sections[fromIdx].items] }
+    const to = { ...sections[toIdx], items: [...sections[toIdx].items] }
+
+    const moving: SrtItem[] = []
+    const remaining: SrtItem[] = []
+    for (const it of from.items) {
+      const i = it.index
+      if (i >= start && i <= end) moving.push(it)
+      else remaining.push(it)
+    }
+    if (moving.length === 0) return {}
+
+    from.items = normalizeItems(remaining)
+    to.items = normalizeItems([...moving, ...to.items])
+    sections[fromIdx] = from
+    sections[toIdx] = to
+
+    if (from.items.length === 0) {
+      sections.splice(fromIdx, 1)
+    }
+
+    return { sections, selectedRange: null, selectedSectionId: null }
+  }),
+
+  createSectionFromSelection: () => set((state) => {
+    const range = state.selectedRange
+    if (!range) return {}
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+    const within = rangeWithinSingleSection(state.sections, { start, end })
+    if (!within) return {}
+
+    const sections = [...state.sections]
+    const fromIdx = within.sectionIndex
+    const from = sections[fromIdx]
+    if (!from) return {}
+
+    const before: SrtItem[] = []
+    const mid: SrtItem[] = []
+    const after: SrtItem[] = []
+    for (const it of from.items) {
+      const i = it.index
+      if (i < start) before.push(it)
+      else if (i > end) after.push(it)
+      else mid.push(it)
+    }
+    if (mid.length === 0) return {}
+
+    const prevColor =
+      before.length > 0
+        ? from.color
+        : (sections[fromIdx - 1]?.color ?? null)
+    const nextColor =
+      after.length > 0
+        ? from.color
+        : (sections[fromIdx + 1]?.color ?? null)
+    const newColor = pickSectionColorAvoidingNeighbors({ prevColor, nextColor })
+
+    const newId = nextSectionId(sections)
+    const newSection: Section = {
+      id: newId,
+      title: 'New section',
+      description: '',
+      color: newColor,
+      isEnabled: true,
+      items: normalizeItems(mid),
+    }
+
+    const nextSections: Section[] = []
+    for (let i = 0; i < sections.length; i++) {
+      if (i !== fromIdx) {
+        nextSections.push(sections[i])
+        continue
+      }
+
+      if (before.length > 0) {
+        nextSections.push({ ...from, items: normalizeItems(before) })
+      }
+      nextSections.push(newSection)
+      if (after.length > 0) {
+        nextSections.push({ ...from, items: normalizeItems(after) })
+      }
+    }
+
+    return { sections: nextSections, selectedRange: null, selectedSectionId: null }
+  }),
+
+  removeSelectedSection: () => set((state) => {
+    const selectedId = state.selectedSectionId
+    if (selectedId == null) return {}
+
+    const sections = [...state.sections]
+    if (sections.length <= 1) return {}
+
+    const idx = sections.findIndex(s => s.id === selectedId)
+    if (idx < 0) return {}
+    const victim = sections[idx]
+    if (!victim) return {}
+
+    // Merge into previous by default, except if removing the first section.
+    const targetIdx = idx === 0 ? 1 : idx - 1
+    const target = sections[targetIdx]
+    if (!target) return {}
+
+    const mergedTarget: Section = {
+      ...target,
+      items: normalizeItems([...target.items, ...victim.items]),
+    }
+
+    const next: Section[] = []
+    for (let i = 0; i < sections.length; i++) {
+      if (i === idx) continue
+      if (i === targetIdx) next.push(mergedTarget)
+      else next.push(sections[i])
+    }
+
+    return { sections: next, selectedRange: null, selectedSectionId: null }
+  }),
+
   generateSections: async () => {
     const { srtItems, setIsGenerating, setGenerateProgress, setSections, setGenerateError } = useStore.getState()
 

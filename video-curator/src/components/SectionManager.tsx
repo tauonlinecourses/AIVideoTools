@@ -36,6 +36,8 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
   const videoDuration = useStore(s => s.videoDuration)
   const toggleSection = useStore(s => s.toggleSection)
   const renameSection = useStore(s => s.renameSection)
+  const selectedSectionId = useStore(s => s.selectedSectionId)
+  const setSelectedSectionId = useStore(s => s.setSelectedSectionId)
 
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
@@ -190,6 +192,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
             const durationLabel = durations.get(section.id) ?? '00:00'
             const heightWeight = durationWeights.get(section.id) ?? 0
             const startTime = idx === 0 ? 0 : sectionStartTimeSeconds(section)
+            const isSelected = selectedSectionId === section.id
 
             const commitRename = () => {
               if (!isEditing) return
@@ -214,7 +217,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
               <div
                 key={section.id}
                 className={cx(
-                  'group relative px-3 py-2 overflow-hidden',
+                  'group relative px-3 py-2 overflow-hidden min-h-[56px]',
                   muted ? 'bg-gray-50' : 'bg-white'
                 )}
                 style={{ flexGrow: heightWeight, flexBasis: 0 }}
@@ -228,6 +231,15 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
                 <div className="pr-3">
                   <div className="flex items-center justify-end gap-2">
                     <div className="min-w-0 flex shrink items-center justify-end gap-2">
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={(e) => setSelectedSectionId(e.target.checked ? section.id : null)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="mt-[1px] h-4 w-4 border border-gray-400 bg-white"
+                        aria-label="Select section"
+                        title="Select section"
+                      />
                       <button
                         type="button"
                         className={cx(
