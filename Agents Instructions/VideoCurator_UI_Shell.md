@@ -11,6 +11,7 @@ This document describes the Phase 3 UI shell implementation for the Video Curato
 - No rounded corners anywhere (do not use Tailwind `rounded*` utilities)
   - Exception: `Timeline` uses a subtle `rounded-[3px]` to match editing-software styling.
   - Exception: the 3 onboarding buttons (Upload Video, Upload Transcript, Generate Sections) use `rounded-[6px]`.
+  - Exception: the transcript **File · YouTube** tab control and the YouTube **Import** button in `UploadZone` / `YouTubeInput` use `rounded-[6px]`.
 
 ## Source of truth: Zustand store
 Store hook: `video-curator/src/lib/store.ts` exports `useStore()`.
@@ -27,12 +28,26 @@ The transcript auto-segmentation feature calls **your own** `/api/segment-transc
   - Deploy: same, until server env is configured.
 - **Security note**: Do not ship OpenAI keys to the browser. Calling OpenAI directly from `http://localhost:5173` also fails with CORS; the `/api/...` approach avoids both CORS and key exposure.
 
+## YouTube transcript import (server route)
+Users can load captions from a public YouTube video **without uploading an `.srt` file** by pasting a watch URL (or an 11-character video id) and importing from the transcript upload control.
+
+- **Client entry points**:
+  - `video-curator/src/components/UploadZone.tsx` — when `fileType === 'transcript'`, a **File · YouTube** tab toggle chooses between the existing drag/drop `.srt` flow and the YouTube URL flow.
+  - `video-curator/src/components/YouTubeInput.tsx` — URL field + language selector + **Import** button; on success calls `setSrtItems(items, isRTL)` the same way as file upload.
+  - `video-curator/src/lib/fetchYoutubeTranscript.ts` — `POST /api/youtube-transcript` with `{ url, lang? }`, validates JSON, maps segments to `SrtItem[]` (sequential `index`).
+- **Server implementation**:
+  - `video-curator/server/youtubeTranscriptCore.ts` — uses `youtube-transcript` (`fetchTranscript`) for caption XML, normalizes timing (srv3 cues use **milliseconds** vs classic **seconds**; heuristic: mean cue duration `> 200` ⇒ treat as ms and divide by 1000), optional title via YouTube **oEmbed**.
+  - `video-curator/api/youtube-transcript.ts` — Vercel serverless handler: `POST` body `{ url: string, lang?: string }` → `{ items: { startTime, endTime, text }[], title?, videoId }`. Returns **400** for transcript/URL errors, **429** for `YoutubeTranscriptTooManyRequestError`, **500** otherwise.
+- **Local Vite dev**: `video-curator/vite.config.ts` mirrors `POST /api/youtube-transcript` the same way as `/api/segment-transcript` (no secrets required).
+- **Env vars**: **None** for this route (unlike OpenAI). It still runs **server-side** so the browser is not blocked by YouTube/CORS.
+- **Video file**: Importing from YouTube only fills **transcript state**. Local **`.mp4` upload is still required** for playback and FFmpeg-based export, matching the existing separation between transcript and video in the store.
+
 ## Build + deploy (Vercel)
 - The Vercel build runs `npm run build`, which executes `tsc -b && vite build`.
 - **Deploy layout** (recommended):
   - Set Vercel **Root Directory** to `video-curator/`
   - The static site output is `video-curator/dist`
-  - The serverless function is implemented at `video-curator/api/segment-transcript.ts` so `/api/segment-transcript` exists in production.
+  - Serverless functions live under `video-curator/api/`: `segment-transcript.ts` → `/api/segment-transcript`, `youtube-transcript.ts` → `/api/youtube-transcript`.
   - The folder `video-curator/` includes its own `vercel.json` with:
     - `buildCommand`: `npm ci && npm run build`
     - `outputDirectory`: `dist`
@@ -65,7 +80,7 @@ Path: `video-curator/src/components/UploadZone.tsx`
 
 Responsibilities:
 - Accepts `fileType: 'video' | 'transcript'`
-- Supports drag/drop and click-to-upload
+- Supports drag/drop and click-to-upload (transcript also supports **YouTube URL import** via a tab)
 - Shows 3 visual states:
   - empty
   - drag-over
@@ -75,12 +90,17 @@ Behavior:
 - **Video upload**:
   - Accepts `.mp4`
   - Calls `useStore.getState().setVideoFile(file)` via `useStore` selector in component
-- **Transcript upload**:
+- **Transcript upload — File tab**:
   - Accepts `.srt`
   - Reads file as text: `await file.text()`
   - Parses into `SrtItem[]` using `parseSrt(raw)` (`video-curator/src/lib/parseSrt.ts`)
   - Detects RTL using `detectDirection(items)` (`video-curator/src/lib/detectDirection.ts`)
   - Stores: `setSrtItems(items, isRTL)`
+- **Transcript upload — YouTube tab**:
+  - Renders `YouTubeInput` instead of the file drop target
+  - Tab control is a **File · YouTube** segmented control (`role="tablist"`), using `rounded-[6px]` per design exceptions
+  - On successful import, the displayed label is `${title ?? 'YouTube transcript'} (${videoId})` (stored in local `transcriptFilename` state for the summary row when viewing the File tab / shared uploaded state)
+  - Layout invariant: `UploadZone` reserves a fixed-height header row (`h-8`) above the upload card for **both** video and transcript, so the two upload cards stay vertically aligned when rendered side-by-side in `RightPanel`.
 
 Uploaded-state UI details:
 - **When uploaded**:
@@ -95,6 +115,18 @@ Uploaded-state UI details:
 
 Imperative handle (for onboarding buttons):
 - Exposes `openFileDialog()` via `ref`, implemented with `forwardRef` + `useImperativeHandle`
+
+### `YouTubeInput`
+Path: `video-curator/src/components/YouTubeInput.tsx`
+
+Responsibilities:
+- Text input for a YouTube watch URL (or paste-friendly formats accepted by `youtube-transcript`)
+- Language selection for the YouTube caption track:
+  - **Auto** (default): omit `lang` and use YouTube’s default track
+  - Quick picks: `he`, `en`, `ar`
+  - **Custom…**: type any ISO language code supported by the video’s caption tracks
+- **Import** triggers `fetchYoutubeTranscriptAsSrtItems` (`video-curator/src/lib/fetchYoutubeTranscript.ts`)
+- On success: `detectDirection` + `setSrtItems`, and `onImportedLabel` updates the parent upload summary string
 
 ### `RightPanel`
 Path: `video-curator/src/components/RightPanel.tsx`

@@ -2,8 +2,11 @@ import React, { forwardRef, useCallback, useImperativeHandle, useMemo, useRef, u
 import { parseSrt, type SrtItem } from '../lib/parseSrt'
 import { detectDirection } from '../lib/detectDirection'
 import { useStore } from '../lib/store'
+import { YouTubeInput } from './YouTubeInput'
 
 export type UploadFileType = 'video' | 'transcript'
+
+export type TranscriptSourceTab = 'file' | 'youtube'
 
 export type UploadZoneHandle = {
   openFileDialog: () => void
@@ -98,6 +101,7 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
   const inputRef = useRef<HTMLInputElement | null>(null)
   const [isDragOver, setIsDragOver] = useState(false)
   const [transcriptFilename, setTranscriptFilename] = useState<string | null>(null)
+  const [transcriptTab, setTranscriptTab] = useState<TranscriptSourceTab>('file')
 
   const videoFilename = useStore(s => s.videoFile?.name ?? null)
   const transcriptLoaded = useStore(s => s.srtItems.length > 0)
@@ -164,6 +168,50 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
 
   return (
     <div className={className}>
+      {/* Reserve a consistent header row so the upload cards align in RightPanel. */}
+      <div className="mb-2 h-8">
+        {fileType === 'transcript' ? (
+          <div
+            className="inline-flex border border-gray-200 bg-white p-0.5 rounded-[6px]"
+            role="tablist"
+            aria-label="Transcript source"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={transcriptTab === 'file'}
+              onClick={() => setTranscriptTab('file')}
+              className={cx(
+                'px-3 py-1.5 text-xs font-semibold transition-colors rounded-[6px]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                transcriptTab === 'file'
+                  ? 'bg-black text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              File
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={transcriptTab === 'youtube'}
+              onClick={() => setTranscriptTab('youtube')}
+              className={cx(
+                'px-3 py-1.5 text-xs font-semibold transition-colors rounded-[6px]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                transcriptTab === 'youtube'
+                  ? 'bg-black text-white'
+                  : 'bg-white text-gray-700 hover:bg-gray-50',
+              )}
+            >
+              YouTube
+            </button>
+          </div>
+        ) : (
+          <div aria-hidden="true" className="h-full" />
+        )}
+      </div>
+
       <input
         ref={inputRef}
         type="file"
@@ -172,69 +220,73 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
         onChange={onInputChange}
       />
 
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => inputRef.current?.click()}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault()
-            inputRef.current?.click()
-          }
-        }}
-        onDrop={onDrop}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        className={cx(
-          'group w-full border px-4 py-3 text-left transition-colors rounded-[6px]',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-          isDragOver
-            ? 'border-black bg-gray-50'
-            : isLoaded
+      {fileType === 'transcript' && transcriptTab === 'youtube' ? (
+        <YouTubeInput onImportedLabel={setTranscriptFilename} />
+      ) : (
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => inputRef.current?.click()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault()
+              inputRef.current?.click()
+            }
+          }}
+          onDrop={onDrop}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          className={cx(
+            'group w-full border px-4 py-3 text-left transition-colors rounded-[6px]',
+            'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+            isDragOver
               ? 'border-black bg-gray-50'
-              : 'border-gray-200 bg-white hover:bg-gray-50',
-        )}
-        aria-label={`Upload ${label}`}
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-start gap-2 text-sm font-semibold text-gray-900">
-              <Icon type={fileType} />
-              <span className="min-w-0">{label}</span>
-            </div>
-            <div className="mt-1 text-xs text-gray-600">
-              {isLoaded ? (
-                <span className="flex min-w-0 items-baseline gap-1">
-                  <span className="shrink-0 font-medium text-gray-900">Uploaded:</span>
-                  <span className="min-w-0 truncate font-medium text-gray-900">
-                    {loadedFilename ?? 'Ready'}
+              : isLoaded
+                ? 'border-black bg-gray-50'
+                : 'border-gray-200 bg-white hover:bg-gray-50',
+          )}
+          aria-label={`Upload ${label}`}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-start gap-2 text-sm font-semibold text-gray-900">
+                <Icon type={fileType} />
+                <span className="min-w-0">{label}</span>
+              </div>
+              <div className="mt-1 text-xs text-gray-600">
+                {isLoaded ? (
+                  <span className="flex min-w-0 items-baseline gap-1">
+                    <span className="shrink-0 font-medium text-gray-900">Uploaded:</span>
+                    <span className="min-w-0 truncate font-medium text-gray-900">
+                      {loadedFilename ?? 'Ready'}
+                    </span>
                   </span>
-                </span>
-              ) : isDragOver ? (
-                <span className="font-medium text-gray-900">Drop the file to upload</span>
-              ) : (
-                <span>Drag & drop, or click to choose a file</span>
-              )}
+                ) : isDragOver ? (
+                  <span className="font-medium text-gray-900">Drop the file to upload</span>
+                ) : (
+                  <span>Drag & drop, or click to choose a file</span>
+                )}
+              </div>
             </div>
-          </div>
 
-          <div
-            className={cx(
-              'shrink-0 border px-2 py-1 text-xs font-medium rounded-[6px]',
-              isLoaded
-                ? 'border-black bg-black text-white group-hover:bg-gray-900'
-                : isDragOver
-                  ? 'border-black bg-white text-gray-900'
-                  : 'border-gray-200 bg-white text-gray-900 group-hover:bg-gray-50'
-            )}
-          >
-            <span className="inline-flex items-center gap-1">
-              {isLoaded ? <CheckIcon /> : null}
-              <span>{isLoaded ? 'Uploaded' : isDragOver ? 'Release' : 'Upload'}</span>
-            </span>
+            <div
+              className={cx(
+                'shrink-0 border px-2 py-1 text-xs font-medium rounded-[6px]',
+                isLoaded
+                  ? 'border-black bg-black text-white group-hover:bg-gray-900'
+                  : isDragOver
+                    ? 'border-black bg-white text-gray-900'
+                    : 'border-gray-200 bg-white text-gray-900 group-hover:bg-gray-50',
+              )}
+            >
+              <span className="inline-flex items-center gap-1">
+                {isLoaded ? <CheckIcon /> : null}
+                <span>{isLoaded ? 'Uploaded' : isDragOver ? 'Release' : 'Upload'}</span>
+              </span>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 })
