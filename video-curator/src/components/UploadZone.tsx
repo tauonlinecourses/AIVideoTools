@@ -166,6 +166,8 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
 
   const isLoaded = fileType === 'video' ? Boolean(videoFilename) : transcriptLoaded
 
+  const cardMinHeight = 'min-h-[112px]'
+
   return (
     <div className={className}>
       {/* Reserve a consistent header row so the upload cards align in RightPanel. */}
@@ -221,68 +223,102 @@ export const UploadZone = forwardRef<UploadZoneHandle, UploadZoneProps>(function
       />
 
       {fileType === 'transcript' && transcriptTab === 'youtube' ? (
-        <YouTubeInput onImportedLabel={setTranscriptFilename} />
+        <div
+          className={cx(
+            'w-full border px-4 py-3 text-left rounded-[6px] border-gray-200 bg-white',
+            cardMinHeight,
+          )}
+        >
+          <YouTubeInput onImportedLabel={setTranscriptFilename} />
+        </div>
       ) : (
         <div
-          role="button"
-          tabIndex={0}
-          onClick={() => inputRef.current?.click()}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault()
-              inputRef.current?.click()
-            }
-          }}
-          onDrop={onDrop}
-          onDragOver={onDragOver}
-          onDragLeave={onDragLeave}
           className={cx(
-            'group w-full border px-4 py-3 text-left transition-colors rounded-[6px]',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+            'group w-full border text-left transition-colors rounded-[6px]',
+            cardMinHeight,
             isDragOver
               ? 'border-black bg-gray-50'
               : isLoaded
                 ? 'border-black bg-gray-50'
                 : 'border-gray-200 bg-white hover:bg-gray-50',
           )}
-          aria-label={`Upload ${label}`}
         >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-start gap-2 text-sm font-semibold text-gray-900">
-                <Icon type={fileType} />
-                <span className="min-w-0">{label}</span>
-              </div>
-              <div className="mt-1 text-xs text-gray-600">
-                {isLoaded ? (
-                  <span className="flex min-w-0 items-baseline gap-1">
-                    <span className="shrink-0 font-medium text-gray-900">Uploaded:</span>
-                    <span className="min-w-0 truncate font-medium text-gray-900">
-                      {loadedFilename ?? 'Ready'}
+          {/* Click-to-upload header area */}
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => inputRef.current?.click()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                inputRef.current?.click()
+              }
+            }}
+            className={cx(
+              'px-4 py-3',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+            )}
+            aria-label={`Upload ${label}`}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-start gap-2 text-sm font-semibold text-gray-900">
+                  <Icon type={fileType} />
+                  <span className="min-w-0">{label}</span>
+                </div>
+                <div className="mt-1 text-xs text-gray-600">
+                  {isLoaded ? (
+                    <span className="flex min-w-0 items-baseline gap-1">
+                      <span className="shrink-0 font-medium text-gray-900">Uploaded:</span>
+                      <span className="min-w-0 truncate font-medium text-gray-900">
+                        {loadedFilename ?? 'Ready'}
+                      </span>
                     </span>
-                  </span>
-                ) : isDragOver ? (
-                  <span className="font-medium text-gray-900">Drop the file to upload</span>
-                ) : (
-                  <span>Drag & drop, or click to choose a file</span>
+                  ) : (
+                    <span>Click to choose a file</span>
+                  )}
+                </div>
+              </div>
+
+              <div
+                className={cx(
+                  'shrink-0 border px-2 py-1 text-xs font-medium rounded-[6px]',
+                  isLoaded
+                    ? 'border-black bg-black text-white group-hover:bg-gray-900'
+                    : 'border-gray-200 bg-white text-gray-900 group-hover:bg-gray-50',
                 )}
+              >
+                <span className="inline-flex items-center gap-1">
+                  {isLoaded ? <CheckIcon /> : null}
+                  <span>{isLoaded ? 'Uploaded' : 'Upload'}</span>
+                </span>
               </div>
             </div>
+          </div>
 
+          {/* Drag-and-drop box */}
+          <div className="px-4 pb-3">
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => inputRef.current?.click()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  inputRef.current?.click()
+                }
+              }}
+              onDrop={onDrop}
+              onDragOver={onDragOver}
+              onDragLeave={onDragLeave}
               className={cx(
-                'shrink-0 border px-2 py-1 text-xs font-medium rounded-[6px]',
-                isLoaded
-                  ? 'border-black bg-black text-white group-hover:bg-gray-900'
-                  : isDragOver
-                    ? 'border-black bg-white text-gray-900'
-                    : 'border-gray-200 bg-white text-gray-900 group-hover:bg-gray-50',
+                'w-full border border-dashed px-3 py-2 text-xs text-gray-700 transition-colors rounded-[6px]',
+                'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+                isDragOver ? 'border-black bg-white text-gray-900' : 'border-gray-200 bg-gray-50',
               )}
+              aria-label={`Drag and drop ${label}`}
             >
-              <span className="inline-flex items-center gap-1">
-                {isLoaded ? <CheckIcon /> : null}
-                <span>{isLoaded ? 'Uploaded' : isDragOver ? 'Release' : 'Upload'}</span>
-              </span>
+              {isDragOver ? 'Release to upload' : 'Drag & drop here'}
             </div>
           </div>
         </div>

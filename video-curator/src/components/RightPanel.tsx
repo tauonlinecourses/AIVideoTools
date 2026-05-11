@@ -32,9 +32,9 @@ export function RightPanel({ onSeek }: RightPanelProps) {
 
   const state = useMemo(() => {
     if (sectionsCount > 0) return 'C'
-    if (videoFile && srtItemsCount > 0) return 'B'
+    if (srtItemsCount > 0) return 'B'
     return 'A'
-  }, [sectionsCount, videoFile, srtItemsCount])
+  }, [sectionsCount, srtItemsCount])
 
   const canGenerate = state === 'B' && !isGenerating
 
@@ -47,18 +47,18 @@ export function RightPanel({ onSeek }: RightPanelProps) {
               Video Curator
             </div>
             <div className="mt-1 text-sm text-gray-600">
-              Upload a video and transcript, generate topic sections, then export a trimmed result.
+              Upload a transcript, generate topic sections, then export a trimmed transcript. Upload a video if you want preview + video export.
             </div>
           </div>
 
           <ol className="mt-6 space-y-2 text-sm text-gray-800">
             <li className="flex gap-2">
               <span className="w-5 shrink-0 text-gray-500">1.</span>
-              <span>Upload Video and Transcript Files</span>
+              <span>Upload a Transcript (optional: upload a Video for preview/export)</span>
             </li>
             <li className="flex gap-2">
               <span className="w-5 shrink-0 text-gray-500">2.</span>
-              <span>Click Generate Sections to segment the video using AI</span>
+              <span>Click Generate Sections to segment the transcript using AI</span>
             </li>
             <li className="flex gap-2">
               <span className="w-5 shrink-0 text-gray-500">3.</span>
@@ -66,7 +66,7 @@ export function RightPanel({ onSeek }: RightPanelProps) {
             </li>
             <li className="flex gap-2">
               <span className="w-5 shrink-0 text-gray-500">4.</span>
-              <span>Download the final video and transcript</span>
+              <span>Download the final transcript (and video if uploaded)</span>
             </li>
           </ol>
 
@@ -125,8 +125,10 @@ export function RightPanel({ onSeek }: RightPanelProps) {
 
             <div className="mt-2 text-xs text-gray-600">
               {state === 'A'
-                ? 'Upload both files to enable generation.'
-                : 'Ready to generate sections from your transcript.'}
+                ? 'Upload a transcript to enable generation. Video is optional.'
+                : videoFile
+                  ? 'Ready to generate sections from your transcript.'
+                  : 'Ready to generate sections from your transcript. Upload a video anytime for preview and video export.'}
             </div>
           </div>
         </div>

@@ -40,7 +40,7 @@ Users can load captions from a public YouTube video **without uploading an `.srt
   - `video-curator/api/youtube-transcript.ts` — Vercel serverless handler: `POST` body `{ url: string, lang?: string }` → `{ items: { startTime, endTime, text }[], title?, videoId }`. Returns **400** for transcript/URL errors, **429** for `YoutubeTranscriptTooManyRequestError`, **500** otherwise.
 - **Local Vite dev**: `video-curator/vite.config.ts` mirrors `POST /api/youtube-transcript` the same way as `/api/segment-transcript` (no secrets required).
 - **Env vars**: **None** for this route (unlike OpenAI). It still runs **server-side** so the browser is not blocked by YouTube/CORS.
-- **Video file**: Importing from YouTube only fills **transcript state**. Local **`.mp4` upload is still required** for playback and FFmpeg-based export, matching the existing separation between transcript and video in the store.
+- **Video file**: Importing from YouTube only fills **transcript state**. A local **`.mp4` upload is optional**—required only for playback preview and FFmpeg-based **video** export. Transcript-only generation/editing/export is supported.
 
 ## Build + deploy (Vercel)
 - The Vercel build runs `npm run build`, which executes `tsc -b && vite build`.
@@ -101,11 +101,13 @@ Behavior:
   - Parses into `SrtItem[]` using `parseSrt(raw)` (`video-curator/src/lib/parseSrt.ts`)
   - Detects RTL using `detectDirection(items)` (`video-curator/src/lib/detectDirection.ts`)
   - Stores: `setSrtItems(items, isRTL)`
+  - UI: the upload card has a click-to-upload header area plus a small drag-and-drop box at the bottom (the drop box is also clickable to open the file picker).
 - **Transcript upload — YouTube tab**:
   - Renders `YouTubeInput` instead of the file drop target
   - Tab control is a **File · YouTube** segmented control (`role="tablist"`), using `rounded-[6px]` per design exceptions
   - On successful import, the displayed label is `${title ?? 'YouTube transcript'} (${videoId})` (stored in local `transcriptFilename` state for the summary row when viewing the File tab / shared uploaded state)
   - Layout invariant: `UploadZone` reserves a fixed-height header row (`h-8`) above the upload card for **both** video and transcript, so the two upload cards stay vertically aligned when rendered side-by-side in `RightPanel`.
+  - Height invariant: the YouTube import panel is wrapped in the same bordered card container and uses a shared minimum height so it visually matches the Video upload card.
 
 Uploaded-state UI details:
 - **When uploaded**:
@@ -127,11 +129,16 @@ Path: `video-curator/src/components/YouTubeInput.tsx`
 Responsibilities:
 - Text input for a YouTube watch URL (or paste-friendly formats accepted by `youtube-transcript`)
 - Language selection for the YouTube caption track:
-  - **Auto** (default): omit `lang` and use YouTube’s default track
+  - **Select language** (default): omit `lang` and use YouTube’s default track
   - Quick picks: `he`, `en`, `ar`
-  - **Custom…**: type any ISO language code supported by the video’s caption tracks
 - **Import** triggers `fetchYoutubeTranscriptAsSrtItems` (`video-curator/src/lib/fetchYoutubeTranscript.ts`)
 - On success: `detectDirection` + `setSrtItems`, and `onImportedLabel` updates the parent upload summary string
+
+Layout:
+- URL input is a **full-width** row.
+- Under it, a responsive row contains the language selector plus the **Import** button:
+  - On narrow widths: two stacked rows (selector, then button).
+  - On `sm+`: a two-column grid (`1fr` selector + `auto` button) so the controls never overlap in the narrow right panel.
 
 ### `RightPanel`
 Path: `video-curator/src/components/RightPanel.tsx`
@@ -147,7 +154,7 @@ Responsibilities:
 #### RightPanel state machine
 Derived from `useStore()`:
 - **State A — Onboarding**:
-  - Condition: `sections.length === 0` AND `(videoFile === null OR srtItems.length === 0)`
+  - Condition: `sections.length === 0` AND `srtItems.length === 0`
   - UI:
     - Title “Video Curator”
     - Steps 1–4 (static text)
@@ -155,10 +162,11 @@ Derived from `useStore()`:
     - Generate button disabled
     - No footer disclaimer text (e.g. no “light mode only” line)
 - **State B — Ready to generate**:
-  - Condition: `sections.length === 0` AND `videoFile !== null` AND `srtItems.length > 0`
+  - Condition: `sections.length === 0` AND `srtItems.length > 0` (video optional)
   - UI:
     - Same as State A
     - Generate button enabled
+    - If `videoFile === null`, the user can still generate/edit/export the transcript; video preview and Download Video remain disabled until a video is uploaded.
     - While `isGenerating === true`:
       - The button shows a spinner and becomes disabled
       - A progress row appears below the button:
@@ -413,8 +421,9 @@ Interactions:
     - `timeWithinSection = sectionStartTime + (localClickX / blockWidth) * (sectionEndTime - sectionStartTime)`
 
 Empty state:
-- When `sections.length === 0`, the timeline is still shown as a scrub-able bar driven by the uploaded video’s metadata:
-  - Uses `store.videoDuration` for the time axis (so seeking works immediately after upload)
+- When `sections.length === 0`, the timeline is still shown as a scrub-able bar driven by duration metadata:
+  - If a video is uploaded: uses `store.videoDuration` for the time axis (so seeking works immediately after upload)
+  - If no video is uploaded (transcript-only): uses the transcript duration derived from the last subtitle `endTime`
   - Shows a “filmstrip” background by repeating a captured still (`store.timelinePosterUrl`) across the full width (editing-software style)
   - Falls back to a plain light background until the first frame is captured
 
@@ -483,7 +492,7 @@ Refs:
 
 Handlers:
 - Shared seek:
-  - `handleSeek(time)` calls `videoPlayerRef.current?.seekTo(time)`
+  - `handleSeek(time)` seeks the video when available; otherwise it sets `store.currentTime` (transcript-only mode) so the playhead + active sentence highlighting still work.
   - Passed to:
     - `Timeline.onSeek`
     - `TranscriptPane.onSeek`

@@ -7,13 +7,20 @@ import { VideoPlayer, type VideoPlayerHandle } from './components/VideoPlayer'
 
 function App() {
   const sections = useStore(s => s.sections)
+  const videoUrl = useStore(s => s.videoUrl)
+  const setCurrentTime = useStore(s => s.setCurrentTime)
 
   const videoPlayerRef = useRef<VideoPlayerHandle | null>(null)
   const transcriptRef = useRef<TranscriptPaneHandle | null>(null)
 
   const handleSeek = useCallback((t: number) => {
-    videoPlayerRef.current?.seekTo(t)
-  }, [])
+    if (videoUrl) {
+      videoPlayerRef.current?.seekTo(t)
+      return
+    }
+    // Transcript-only mode: still drive playhead + active sentence highlighting.
+    setCurrentTime(t)
+  }, [setCurrentTime, videoUrl])
 
   const handleSectionClick = useCallback((sectionId: number) => {
     const section = sections.find(s => s.id === sectionId)

@@ -68,6 +68,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
   const sections = useStore(s => s.sections)
   const videoDuration = useStore(s => s.videoDuration)
   const timelinePosterUrl = useStore(s => s.timelinePosterUrl)
+  const srtItems = useStore(s => s.srtItems)
 
   const containerRef = useRef<HTMLDivElement | null>(null)
   const playheadRef = useRef<HTMLDivElement | null>(null)
@@ -75,8 +76,18 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
   const [containerWidthPx, setContainerWidthPx] = useState(0)
 
   const { blocks, totalDuration } = useMemo(() => {
+    const safeVideoDuration = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0
+    const transcriptDuration = (() => {
+      let maxEnd = 0
+      for (const it of srtItems) {
+        if (!it) continue
+        if (Number.isFinite(it.endTime)) maxEnd = Math.max(maxEnd, it.endTime)
+      }
+      return Number.isFinite(maxEnd) && maxEnd > 0 ? maxEnd : 0
+    })()
+
     if (sections.length === 0) {
-      return { blocks: [] as SectionBlock[], totalDuration: videoDuration }
+      return { blocks: [] as SectionBlock[], totalDuration: safeVideoDuration || transcriptDuration }
     }
     const durations = sections.map((s, idx) => {
       const { start, end } = sectionStartEnd(s, {
@@ -115,7 +126,7 @@ export function Timeline({ onSeek, onSectionClick, className }: TimelineProps) {
     }
 
     return { blocks, totalDuration: total }
-  }, [sections, videoDuration])
+  }, [sections, srtItems, videoDuration])
 
   useEffect(() => {
     const el = containerRef.current

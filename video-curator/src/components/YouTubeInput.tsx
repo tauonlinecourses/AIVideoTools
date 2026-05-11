@@ -15,8 +15,7 @@ export interface YouTubeInputProps {
 
 export function YouTubeInput({ onImportedLabel, className }: YouTubeInputProps) {
   const [url, setUrl] = useState('')
-  const [langMode, setLangMode] = useState<'auto' | 'he' | 'en' | 'ar' | 'custom'>('auto')
-  const [customLang, setCustomLang] = useState('')
+  const [langMode, setLangMode] = useState<'auto' | 'he' | 'en' | 'ar'>('auto')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -27,12 +26,7 @@ export function YouTubeInput({ onImportedLabel, className }: YouTubeInputProps) 
     setError(null)
     setBusy(true)
     try {
-      const lang =
-        langMode === 'auto'
-          ? undefined
-          : langMode === 'custom'
-            ? (customLang.trim() || undefined)
-            : langMode
+      const lang = langMode === 'auto' ? undefined : langMode
 
       const { items, title, videoId } = await fetchYoutubeTranscriptAsSrtItems(url, { lang })
       const isRTL = detectDirection(items)
@@ -45,49 +39,13 @@ export function YouTubeInput({ onImportedLabel, className }: YouTubeInputProps) 
     } finally {
       setBusy(false)
     }
-  }, [customLang, langMode, onImportedLabel, setSrtItems, url])
+  }, [langMode, onImportedLabel, setSrtItems, url])
 
-  const loadedHint = transcriptLoaded ? 'Transcript loaded' : 'Paste a link, then import'
+  const loadedHint = transcriptLoaded ? 'Transcript loaded' : null
 
   return (
     <div className={className}>
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-stretch">
-        <div className="flex gap-2">
-          <select
-            name="youtube-lang"
-            value={langMode}
-            disabled={busy}
-            onChange={(e) => setLangMode(e.target.value as typeof langMode)}
-            className={cx(
-              'border border-gray-200 bg-white px-2 py-2 text-sm text-gray-900 outline-none',
-              'focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-              busy && 'opacity-60',
-            )}
-            aria-label="Transcript language"
-          >
-            <option value="auto">Auto</option>
-            <option value="he">Hebrew (he/iw)</option>
-            <option value="en">English (en)</option>
-            <option value="ar">Arabic (ar)</option>
-            <option value="custom">Custom…</option>
-          </select>
-          {langMode === 'custom' ? (
-            <input
-              type="text"
-              name="youtube-lang-custom"
-              value={customLang}
-              disabled={busy}
-              onChange={(e) => setCustomLang(e.target.value)}
-              placeholder="e.g. he, en, ar"
-              className={cx(
-                'w-[140px] border border-gray-200 bg-white px-2 py-2 text-sm text-gray-900 outline-none',
-                'focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                busy && 'opacity-60',
-              )}
-              aria-label="Custom language code"
-            />
-          ) : null}
-        </div>
+      <div className="flex flex-col gap-2">
         <input
           type="url"
           name="youtube-url"
@@ -97,28 +55,49 @@ export function YouTubeInput({ onImportedLabel, className }: YouTubeInputProps) 
           disabled={busy}
           onChange={(e) => setUrl(e.target.value)}
           className={cx(
-            'min-w-0 flex-1 border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none',
+            'w-full border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 outline-none',
             'focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
             busy && 'opacity-60',
           )}
         />
-        <button
-          type="button"
-          disabled={busy || !url.trim()}
-          onClick={() => void onImport()}
-          className={cx(
-            'shrink-0 border px-4 py-2 text-sm font-semibold transition-colors rounded-[6px]',
-            'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-            busy || !url.trim()
-              ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
-              : 'border-black bg-black text-white hover:bg-gray-900',
-          )}
-        >
-          {busy ? 'Importing…' : 'Import'}
-        </button>
+
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
+          <select
+            name="youtube-lang"
+            value={langMode}
+            disabled={busy}
+            onChange={(e) => setLangMode(e.target.value as typeof langMode)}
+            className={cx(
+              'w-full border border-gray-200 bg-white px-2 py-2 text-sm text-gray-900 outline-none',
+              'focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+              busy && 'opacity-60',
+            )}
+            aria-label="Transcript language"
+          >
+            <option value="auto">Select language</option>
+            <option value="he">Hebrew (he/iw)</option>
+            <option value="en">English (en)</option>
+            <option value="ar">Arabic (ar)</option>
+          </select>
+
+          <button
+            type="button"
+            disabled={busy || !url.trim()}
+            onClick={() => void onImport()}
+            className={cx(
+              'w-full shrink-0 border px-4 py-2 text-sm font-semibold transition-colors rounded-[6px] sm:w-auto',
+              'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
+              busy || !url.trim()
+                ? 'cursor-not-allowed border-gray-200 bg-gray-50 text-gray-400'
+                : 'border-black bg-black text-white hover:bg-gray-900',
+            )}
+          >
+            {busy ? 'Importing…' : 'Import transcript'}
+          </button>
+        </div>
       </div>
 
-      <div className="mt-2 text-xs text-gray-600">{loadedHint}</div>
+      {!loadedHint ? null : <div className="mt-2 text-xs text-gray-600">{loadedHint}</div>}
 
       {error ? (
         <div className="mt-2 border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-900">
