@@ -76,7 +76,7 @@ Users can load captions from a public YouTube video **without uploading an `.srt
 - **Toggle**: `toggleSection(id)`
 - **Selection**:
   - Sentence checkbox range: `setSelectedIndex(index, checked)`
-  - Section checkbox: `setSelectedSectionId(id | null)`
+  - Section checkbox (in `TranscriptPane` section header): `setSelectedSectionId(id | null)`
   - Clear: `clearSelection()`
 
 ## Component map
@@ -198,13 +198,14 @@ Responsibilities:
     - clamped to 2 lines and clipped (does not change section block height)
     - full text is available via hover tooltip
   - section duration (`MM:SS`)
-  - a section **selection checkbox** (used for destructive actions like removing a section)
   - enable/disable as an **eye icon** button calling `toggleSection(section.id)`
-  - layout order (right → left): **Title, Duration, Eye** (+ selection checkbox at the start of the row)
+  - layout order (right → left): **Title, Duration, Eye**
+  - Note: there is no section selection checkbox in `SectionManager`; explicit section selection (for destructive actions like remove) is performed from the `TranscriptPane` section header.
   - disabled sections are muted and struck through (title), and the spine is also muted
 - Bottom:
   - `Download Video` button (exports curated video, with a left download icon)
   - `Download Transcript` button (exports curated transcript, with a left download icon)
+  - `Download PDF` button (exports a full editing report as a PDF, with a left download icon)
 
 Export behavior:
 - **Disable rules (both buttons)**:
@@ -212,6 +213,16 @@ Export behavior:
   - Disabled when all sections are toggled off (`section.isEnabled === false` for all sections)
   - Disabled while an export is in progress
   - Shows a muted helper label `No sections enabled` when sections exist but all are disabled
+- **Download PDF**:
+  - Synchronous export (no loading UI)
+  - Includes **all sections** in order, even disabled sections, but marks them as `DISABLED`
+  - Includes **all sentences** in each section with per-sentence timestamps
+  - Includes hidden sentences (`store.hiddenSentenceByIndex[index] === true`) but marks them as `HIDDEN`
+  - Includes section descriptions when present
+  - Implementation: `video-curator/src/lib/exportPdf.ts`
+  - Disable rules:
+    - Disabled when `store.sections.length === 0`
+    - Disabled while a video export is in progress (shared export state)
 - **Download Transcript**:
   - Synchronous export (no loading UI)
   - Only enabled sections are included

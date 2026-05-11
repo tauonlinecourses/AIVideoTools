@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, type Section } from '../lib/store'
 import { exportSrt } from '../lib/exportSrt'
 import { exportVideo } from '../lib/exportVideo'
+import { exportPdf } from '../lib/exportPdf'
 
 function formatMMSS(totalSeconds: number): string {
   if (!Number.isFinite(totalSeconds) || totalSeconds <= 0) return '00:00'
@@ -34,17 +35,17 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
   const sections = useStore(s => s.sections)
   const videoFile = useStore(s => s.videoFile)
   const videoDuration = useStore(s => s.videoDuration)
+  const isRTL = useStore(s => s.isRTL)
   const hiddenSentenceByIndex = useStore(s => s.hiddenSentenceByIndex)
   const toggleSection = useStore(s => s.toggleSection)
   const renameSection = useStore(s => s.renameSection)
-  const selectedSectionId = useStore(s => s.selectedSectionId)
-  const setSelectedSectionId = useStore(s => s.setSelectedSectionId)
 
   const [editingSectionId, setEditingSectionId] = useState<number | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
   const inputRef = useRef<HTMLInputElement | null>(null)
 
   const [isExporting, setIsExporting] = useState(false)
+  const [isExportingPdf, setIsExportingPdf] = useState(false)
   const [exportProgress, setExportProgress] = useState(0)
   const [exportError, setExportError] = useState<string | null>(null)
 
@@ -139,6 +140,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
   const hasEnabledSections = enabledSectionsCount > 0
   const hasSections = sections.length > 0
   const disableExports = !hasSections || !hasEnabledSections || isExporting
+  const disablePdf = !hasSections || isExporting || isExportingPdf
 
   const downloadBlob = (blob: Blob, filename: string) => {
     const url = URL.createObjectURL(blob)
@@ -193,7 +195,6 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
             const durationLabel = durations.get(section.id) ?? '00:00'
             const heightWeight = durationWeights.get(section.id) ?? 0
             const startTime = idx === 0 ? 0 : sectionStartTimeSeconds(section)
-            const isSelected = selectedSectionId === section.id
 
             const commitRename = () => {
               if (!isEditing) return
@@ -232,15 +233,6 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
                 <div className="pr-3">
                   <div className="flex items-center justify-end gap-2">
                     <div className="min-w-0 flex shrink items-center justify-end gap-2">
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={(e) => setSelectedSectionId(e.target.checked ? section.id : null)}
-                        onClick={(e) => e.stopPropagation()}
-                        className="mt-[1px] h-4 w-4 border border-gray-400 bg-white"
-                        aria-label="Select section"
-                        title="Select section"
-                      />
                       <button
                         type="button"
                         className={cx(
@@ -414,7 +406,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 border-t border-gray-200 pt-4">
+      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-gray-200 pt-4">
         <button
           type="button"
           disabled={disableExports || videoFile == null}
@@ -479,6 +471,34 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
         >
           <DownloadIcon className="shrink-0" />
           <span>Download Transcript</span>
+        </button>
+        <button
+          type="button"
+          disabled={disablePdf}
+          onClick={async () => {
+            if (disablePdf) return
+            setIsExportingPdf(true)
+            try {
+              const blob = await exportPdf({ sections, hiddenSentenceByIndex, isRTL, videoDuration })
+              downloadBlob(blob, 'video-curator-export.pdf')
+            } finally {
+              setIsExportingPdf(false)
+            }
+          }}
+          title={
+            !hasSections
+              ? 'No sections yet'
+              : isExporting || isExportingPdf
+                ? 'Processing...'
+                : undefined
+          }
+          className={[
+            'inline-flex items-center justify-center gap-2 border px-3 py-2 text-sm font-semibold',
+            disablePdf ? 'border-gray-200 bg-gray-50 text-gray-500' : 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50',
+          ].join(' ')}
+        >
+          <DownloadIcon className="shrink-0" />
+          <span>Download PDF</span>
         </button>
       </div>
 
