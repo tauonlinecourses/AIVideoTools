@@ -36,6 +36,9 @@ export interface AppState {
   // Transcript selection (contiguous range only)
   selectedRange: SelectedRange | null
 
+  // Per-sentence visibility (independent of section enable/disable)
+  hiddenSentenceByIndex: Record<number, true>
+
   // Selected section (explicit section-level selection)
   selectedSectionId: number | null
 
@@ -50,6 +53,8 @@ export interface AppState {
   setSelectedIndex: (index: number, checked: boolean) => void
   setSelectedSectionId: (id: number | null) => void
   clearSelection: () => void
+  hideSelectedSentences: () => void
+  unhideSelectedSentences: () => void
   setIsGenerating: (val: boolean) => void
   setGenerateProgress: (val: number) => void
   setGenerateError: (err: string | null) => void
@@ -136,6 +141,7 @@ export const useStore = create<AppState>((set) => ({
   generateProgress: 0,
   generateError: null,
   selectedRange: null,
+  hiddenSentenceByIndex: {},
   selectedSectionId: null,
   currentTime: 0,
 
@@ -159,6 +165,7 @@ export const useStore = create<AppState>((set) => ({
     srtItems: items,
     isRTL,
     selectedRange: null,
+    hiddenSentenceByIndex: {},
     selectedSectionId: null,
   }),
 
@@ -196,6 +203,34 @@ export const useStore = create<AppState>((set) => ({
   })),
 
   clearSelection: () => set({ selectedRange: null, selectedSectionId: null }),
+
+  hideSelectedSentences: () => set((state) => {
+    const range = state.selectedRange
+    if (!range) return {}
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+
+    const next: Record<number, true> = { ...state.hiddenSentenceByIndex }
+    for (let i = start; i <= end; i++) {
+      if (!Number.isFinite(i) || i < 0) continue
+      next[i] = true
+    }
+    return { hiddenSentenceByIndex: next }
+  }),
+
+  unhideSelectedSentences: () => set((state) => {
+    const range = state.selectedRange
+    if (!range) return {}
+    const start = Math.min(range.start, range.end)
+    const end = Math.max(range.start, range.end)
+
+    const next: Record<number, true> = { ...state.hiddenSentenceByIndex }
+    for (let i = start; i <= end; i++) {
+      if (!Number.isFinite(i) || i < 0) continue
+      delete next[i]
+    }
+    return { hiddenSentenceByIndex: next }
+  }),
 
   setIsGenerating: (val) => set({ isGenerating: val }),
 

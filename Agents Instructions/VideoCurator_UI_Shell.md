@@ -275,7 +275,7 @@ Responsibilities:
 - Render the full transcript (`store.srtItems`) as a vertically scrollable pane with a fixed header.
 - Visual styling:
   - The transcript pane is **borderless** (no outer container border).
-  - The header has no bottom divider line.
+  - The transcript header selection panel (under the “Transcript” title) uses **only a bottom border** (no top/left/right border).
   - Sentence rows do not use horizontal divider lines between them (spacing is used instead).
 - Respect directionality:
   - Uses `dir="rtl"` when `store.isRTL === true`
@@ -307,6 +307,7 @@ Responsibilities:
   - Ownership is derived by mapping `section.items[].index` → section metadata (memoized lookup).
   - If a sentence is not assigned to any section yet, border is neutral gray.
   - Disabled sections (`section.isEnabled === false`) render at ~40% opacity, but remain clickable.
+  - Per-sentence hiding (strike-through) is independent of section enable/disable and must not make the section header look “disabled”.
   - The border column stretches to the full row height (including when the section label makes the first row taller), so the vertical spine does not “break” on the first sentence.
   - Vertical spacing rules:
     - Consecutive sentences that belong to the same section have **no vertical gap** between rows, so the colored border reads as a continuous vertical spine.

@@ -106,9 +106,12 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
     const toggleSection = useStore(s => s.toggleSection)
     const selectedSectionId = useStore(s => s.selectedSectionId)
     const selectedRange = useStore(s => s.selectedRange)
+    const hiddenSentenceByIndex = useStore(s => s.hiddenSentenceByIndex)
     const setSelectedIndex = useStore(s => s.setSelectedIndex)
     const setSelectedSectionId = useStore(s => s.setSelectedSectionId)
     const clearSelection = useStore(s => s.clearSelection)
+    const hideSelectedSentences = useStore(s => s.hideSelectedSentences)
+    const unhideSelectedSentences = useStore(s => s.unhideSelectedSentences)
     const moveSelectionToPrevSection = useStore(s => s.moveSelectionToPrevSection)
     const moveSelectionToNextSection = useStore(s => s.moveSelectionToNextSection)
     const createSectionFromSelection = useStore(s => s.createSectionFromSelection)
@@ -206,6 +209,15 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
     const selectedCount =
       selectionStart == null || selectionEnd == null ? 0 : Math.max(0, selectionEnd - selectionStart + 1)
 
+    const selectionAllHidden = (() => {
+      if (selectionStart == null || selectionEnd == null) return false
+      if (selectionEnd < selectionStart) return false
+      for (let i = selectionStart; i <= selectionEnd; i++) {
+        if (!hiddenSentenceByIndex[i]) return false
+      }
+      return true
+    })()
+
     const selectionMetaStart = selectionStart == null ? null : (sentenceMetaByIndex.get(selectionStart) ?? null)
     const selectionMetaEnd = selectionEnd == null ? null : (sentenceMetaByIndex.get(selectionEnd) ?? null)
     const selectionWithinOneSection =
@@ -226,7 +238,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
       >
         <div className="px-4 py-3">
           <div className="text-sm font-semibold text-gray-900">Transcript</div>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border border-gray-200 bg-white px-2 py-1.5">
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 bg-white px-2 py-1.5">
             <div className="text-xs text-gray-700">
               <span className="font-semibold text-gray-900">Selected:</span>{' '}
               <span className="tabular-nums">{selectedCount}</span>
@@ -285,6 +297,22 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
               </button>
               <button
                 type="button"
+                disabled={selectedCount <= 0}
+                onClick={() => {
+                  if (selectedCount <= 0) return
+                  if (selectionAllHidden) unhideSelectedSentences()
+                  else hideSelectedSentences()
+                }}
+                className={cx(
+                  'border px-2 py-1 text-xs font-semibold',
+                  selectedCount > 0 ? 'border-gray-900 bg-white text-gray-900 hover:bg-gray-50' : 'border-gray-200 bg-gray-50 text-gray-500'
+                )}
+                title={selectedCount > 0 ? (selectionAllHidden ? 'Unhide selected sentences' : 'Hide selected sentences') : 'Select sentences to hide/unhide'}
+              >
+                {selectionAllHidden ? 'Unhide' : 'Hide'}
+              </button>
+              <button
+                type="button"
                 disabled={!selectedRange && selectedSectionId == null}
                 onClick={() => clearSelection()}
                 className={cx(
@@ -322,7 +350,9 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
 
               const borderColor = meta?.color ?? '#D1D5DB' // gray-300
 
-              const muted = meta ? !meta.isEnabled : false
+              const isHidden = Boolean(hiddenSentenceByIndex[item.index])
+              const mutedSection = meta ? !meta.isEnabled : false
+              const mutedRow = mutedSection || isHidden
 
               const showSectionHeader = Boolean(meta && !isSameSectionAsPrev)
               const isSectionSelected = meta ? selectedSectionId === meta.sectionId : false
@@ -360,7 +390,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                       className={cx(
                         'pb-0',
                         isRTL ? 'pl-4 pr-0' : 'pl-0 pr-4',
-                        muted ? 'opacity-40' : ''
+                        mutedSection ? 'opacity-40' : ''
                       )}
                     >
                       <div
@@ -624,7 +654,7 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                       isRTL ? 'pl-4 pr-0 py-0' : 'pl-0 pr-4 py-0',
                       'transition-colors hover:bg-gray-50',
                       'focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2',
-                      muted ? 'opacity-40' : ''
+                      mutedRow ? 'opacity-40' : ''
                     )}
                     style={rowStyle}
                   >
@@ -655,7 +685,11 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                             className="min-w-0 h-full px-3 py-3"
                           >
                             <div
-                              className={cx('text-sm text-gray-900', isHebrew ? 'text-right' : 'text-left')}
+                              className={cx(
+                                'text-sm text-gray-900',
+                                isHebrew ? 'text-right' : 'text-left',
+                                isHidden ? 'line-through' : ''
+                              )}
                               dir={isHebrew ? 'rtl' : 'ltr'}
                             >
                               {item.text}
@@ -692,7 +726,11 @@ export const TranscriptPane = forwardRef<TranscriptPaneHandle, TranscriptPanePro
                             className="min-w-0 h-full px-3 py-3"
                           >
                             <div
-                              className={cx('text-sm text-gray-900', isHebrew ? 'text-right' : 'text-left')}
+                              className={cx(
+                                'text-sm text-gray-900',
+                                isHebrew ? 'text-right' : 'text-left',
+                                isHidden ? 'line-through' : ''
+                              )}
                               dir={isHebrew ? 'rtl' : 'ltr'}
                             >
                               {item.text}

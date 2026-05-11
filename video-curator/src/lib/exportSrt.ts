@@ -12,10 +12,14 @@ function secondsToSrtTime(seconds: number): string {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`
 }
 
-export function exportSrt(sections: Section[]): string {
+export function exportSrt(
+  sections: Section[],
+  hiddenSentenceByIndex: Record<number, true> = {},
+): string {
   const enabledItems = sections
     .filter((s) => s.isEnabled)
     .flatMap((s) => s.items)
+    .filter((it) => !hiddenSentenceByIndex[it.index])
 
   let runningTime = 0
   const blocks: string[] = []

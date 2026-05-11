@@ -34,6 +34,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
   const sections = useStore(s => s.sections)
   const videoFile = useStore(s => s.videoFile)
   const videoDuration = useStore(s => s.videoDuration)
+  const hiddenSentenceByIndex = useStore(s => s.hiddenSentenceByIndex)
   const toggleSection = useStore(s => s.toggleSection)
   const renameSection = useStore(s => s.renameSection)
   const selectedSectionId = useStore(s => s.selectedSectionId)
@@ -458,7 +459,7 @@ export function SectionManager({ onSeek }: SectionManagerProps) {
           disabled={disableExports}
           onClick={() => {
             if (disableExports) return
-            const srtString = exportSrt(sections)
+            const srtString = exportSrt(sections, hiddenSentenceByIndex)
             const blob = new Blob([srtString], { type: 'text/plain' })
             downloadBlob(blob, 'curated-transcript.srt')
           }}
