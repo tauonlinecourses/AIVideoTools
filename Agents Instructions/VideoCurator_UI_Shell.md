@@ -214,15 +214,23 @@ Export behavior:
   - Disabled while an export is in progress
   - Shows a muted helper label `No sections enabled` when sections exist but all are disabled
 - **Download PDF**:
-  - Synchronous export (no loading UI)
-  - Includes **all sections** in order, even disabled sections, but marks them as `DISABLED`
+  - **Async** export: button shows **Processing...** while `isExportingPdf` is true (brief raster pass; can take a few seconds on long transcripts)
+  - **Raster-based** PDF via `html2canvas` + jsPDF image pagination so Hebrew/RTL text renders with browser shaping (not jsPDF built-in fonts)
+  - **Colorful report** layout mirrors transcript UI semantics:
+    - Per-section **colored spine** (`section.color`) on the transcript edge
+    - Light row tint from section color (~10% alpha); hidden rows use gray background
+    - Section headers show title, **LTR** time range column, and `ENABLED` / `DISABLED` badge
+    - Per-sentence **LTR** timestamp column; transcript text uses `rtl` when Hebrew
+    - Disabled sections at ~40% opacity; hidden sentences with `HIDDEN` label, strikethrough, and reduced opacity
+  - Includes **all sections** in order, even disabled sections
   - Includes **all sentences** in each section with per-sentence timestamps
   - Includes hidden sentences (`store.hiddenSentenceByIndex[index] === true`) but marks them as `HIDDEN`
   - Includes section descriptions when present
-  - Implementation: `video-curator/src/lib/exportPdf.ts`
+  - Header-only summary (title, generated time, counts); no separate video description block
+  - Implementation: `video-curator/src/lib/exportPdf.ts` (direct `html2canvas` dependency)
   - Disable rules:
     - Disabled when `store.sections.length === 0`
-    - Disabled while a video export is in progress (shared export state)
+    - Disabled while a video export is in progress, or while PDF export is in progress
 - **Download Transcript**:
   - Synchronous export (no loading UI)
   - Only enabled sections are included
